@@ -112,6 +112,20 @@ describe("printer", () => {
       const result = await fmt("fn f(){var x=1;}");
       expect(result).toBe("fn f() {\n  var x = 1;\n}\n");
     });
+
+    it("formats var<storage, read_write> with atomic type", async () => {
+      const result = await fmt(
+        "@group(0) @binding(4) var<storage,read_write> globalMaxHits:atomic<u32>;"
+      );
+      expect(result).toBe(
+        "@group(0) @binding(4) var<storage, read_write> globalMaxHits: atomic<u32>;\n"
+      );
+    });
+
+    it("formats const with float suffix", async () => {
+      const result = await fmt("const pi=radians(180f);");
+      expect(result).toBe("const pi = radians(180f);\n");
+    });
   });
 
   describe("struct declarations", () => {
@@ -131,6 +145,24 @@ describe("printer", () => {
       );
       expect(result).toBe(
         "struct Vertex {\n  @location(0) position: vec3f,\n  @location(1) color: vec4f,\n}\n"
+      );
+    });
+
+    it("formats atomic struct members", async () => {
+      const result = await fmt(
+        "struct Pixel{r:atomic<u32>,g:atomic<u32>,b:atomic<u32>,hits:atomic<u32>,}"
+      );
+      expect(result).toBe(
+        "struct Pixel {\n  r: atomic<u32>,\n  g: atomic<u32>,\n  b: atomic<u32>,\n  hits: atomic<u32>,\n}\n"
+      );
+    });
+
+    it("formats fixed-size array struct members", async () => {
+      const result = await fmt(
+        "struct S{indices:array<u32,20>,weights:array<f32,20>,}"
+      );
+      expect(result).toBe(
+        "struct S {\n  indices: array<u32, 20>,\n  weights: array<f32, 20>,\n}\n"
       );
     });
   });
@@ -198,6 +230,36 @@ describe("printer", () => {
     it("formats call with template args", async () => {
       const result = await fmt("const x=array<f32,4>(1.0,2.0,3.0,4.0);");
       expect(result).toBe("const x = array<f32, 4>(1.0, 2.0, 3.0, 4.0);\n");
+    });
+
+    it("formats bitcast builtin", async () => {
+      const result = await fmt("fn f(){var seed:u32=bitcast<u32>(expr);}");
+      expect(result).toBe("fn f() {\n  var seed: u32 = bitcast<u32>(expr);\n}\n");
+    });
+
+    it("formats select with three args", async () => {
+      const result = await fmt("fn f(){let x=select(a,b,cond);}");
+      expect(result).toBe("fn f() {\n  let x = select(a, b, cond);\n}\n");
+    });
+
+    it("formats arrayLength with address-of arg", async () => {
+      const result = await fmt("fn f(){let n=arrayLength(&buf);}");
+      expect(result).toBe("fn f() {\n  let n = arrayLength(&buf);\n}\n");
+    });
+
+    it("formats hex literal in function call", async () => {
+      const result = await fmt("fn f(){let x=f32(0xFFFFFFFF);}");
+      expect(result).toBe("fn f() {\n  let x = f32(0xFFFFFFFF);\n}\n");
+    });
+
+    it("formats integer scalar in typed vec constructor", async () => {
+      const result = await fmt("fn f(){let v=vec2<f32>(0);}");
+      expect(result).toBe("fn f() {\n  let v = vec2<f32>(0);\n}\n");
+    });
+
+    it("formats chained pure index access", async () => {
+      const result = await fmt("fn f(){let x=m[1][0];}");
+      expect(result).toBe("fn f() {\n  let x = m[1][0];\n}\n");
     });
   });
 
@@ -299,6 +361,53 @@ describe("printer", () => {
     it("formats expression statement", async () => {
       const result = await fmt("fn f(){doSomething();}");
       expect(result).toBe("fn f() {\n  doSomething();\n}\n");
+    });
+
+    it("formats ptr parameter type with deref read", async () => {
+      const result = await fmt("fn f(state:ptr<function,u32>){let x=*state;}");
+      expect(result).toBe(
+        "fn f(state: ptr<function, u32>) {\n  let x = *state;\n}\n"
+      );
+    });
+
+    it("formats assignment to dereferenced pointer", async () => {
+      const result = await fmt("fn f(p:ptr<function,u32>){*p=42u;}");
+      expect(result).toBe(
+        "fn f(p: ptr<function, u32>) {\n  *p = 42u;\n}\n"
+      );
+    });
+
+    it("formats atomicAdd with address-of chained index+member", async () => {
+      const result = await fmt("fn f(){atomicAdd(&data[idx].r,1u);}");
+      expect(result).toBe(
+        "fn f() {\n  atomicAdd(&data[idx].r, 1u);\n}\n"
+      );
+    });
+
+    it("formats compound xor-assign with shift RHS", async () => {
+      const result = await fmt("fn f(){x^=x<<13u;}");
+      expect(result).toBe("fn f() {\n  x ^= x << 13u;\n}\n");
+    });
+
+    it("formats modulo operator", async () => {
+      const result = await fmt("fn f(){let x=(thet+f)%t;}");
+      expect(result).toBe("fn f() {\n  let x = (thet + f) % t;\n}\n");
+    });
+
+    it("formats bare block as standalone scope", async () => {
+      const result = await fmt("fn f(){let a=1;{let b=2;}let c=3;}");
+      expect(result).toBe(
+        "fn f() {\n  let a = 1;\n  {\n    let b = 2;\n  }\n  let c = 3;\n}\n"
+      );
+    });
+
+    it("formats continue inside if inside for loop", async () => {
+      const result = await fmt(
+        "fn f(){for(var i=0u;i<10u;i++){if i<5u{continue;}}}"
+      );
+      expect(result).toBe(
+        "fn f() {\n  for (var i = 0u; i < 10u; i++) {\n    if i < 5u {\n      continue;\n    }\n  }\n}\n"
+      );
     });
   });
 
@@ -563,6 +672,19 @@ describe("printer", () => {
   let y = 2;
 }
 `);
+    });
+  });
+
+  describe("large switch", () => {
+    it("formats 30-case switch with u-suffixed selectors", async () => {
+      const cases = Array.from(
+        { length: 30 },
+        (_, i) => `case ${i}u:{return fn_${i}(v,m,r);}`
+      ).join("");
+      const input = `fn f(v:vec2<f32>,idx:u32,m:mat3x3<f32>,r:ptr<function,u32>)->vec2<f32>{switch idx{${cases}default:{return vec2<f32>(0);}}}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
     });
   });
 

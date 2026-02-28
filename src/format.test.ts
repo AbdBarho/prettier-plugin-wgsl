@@ -294,6 +294,141 @@ return colorize(iter);
     });
   });
 
+  describe("advanced WGSL features", () => {
+    async function fmt80(input: string): Promise<string> {
+      return prettier.format(input, {
+        parser: "wgsl",
+        plugins: [(await import("./index.ts")).default],
+        printWidth: 80,
+        tabWidth: 2,
+      });
+    }
+
+    async function assertIdempotent80(input: string): Promise<void> {
+      const first = await fmt80(input);
+      const second = await fmt80(first);
+      expect(second).toBe(first);
+    }
+
+    it("formats xor_shift function with ptr, deref, xor-assign, shift, hex", async () => {
+      const input = `
+fn xor_shift(state:ptr<function,u32>)->f32{
+var x=*state;
+x^=x<<13u;
+x^=x>>17u;
+x^=x<<5u;
+*state=x;
+return f32(x)/f32(0xFFFFFFFF);
+}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+      await assertIdempotent80(input);
+    });
+
+    it("formats atomic struct and atomic builtins", async () => {
+      const input = `
+struct Pixel{r:atomic<u32>,g:atomic<u32>,b:atomic<u32>,hits:atomic<u32>,}
+@group(0)@binding(1)var<storage,read_write> data:array<Pixel>;
+@group(0)@binding(4)var<storage,read_write> globalMaxHits:atomic<u32>;
+fn f(flatIdx:u32,c:vec3<u32>,threadMaxHits:u32){
+atomicAdd(&data[flatIdx].r,c.r);
+atomicAdd(&data[flatIdx].g,c.g);
+atomicAdd(&data[flatIdx].b,c.b);
+let hits=atomicAdd(&data[flatIdx].hits,1u)+1u;
+atomicMax(&globalMaxHits,threadMaxHits);
+}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+    });
+
+    it("formats numeric literals with suffixes", async () => {
+      const input = `
+const pi=radians(180f);
+const tau=radians(360f);
+fn f(){
+var threadMaxHits=300u;
+let numIters=u32(uniforms.num_iters);
+for(var i=0u;i<numIters;i++){
+if i<20u{continue;}
+}
+}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+    });
+
+    it("formats builtins: bitcast, select, arrayLength, typed vec constructor", async () => {
+      const input = `
+fn f(buf:ptr<function,u32>){
+var seed:u32=bitcast<u32>((p.x+idx)*0.345234);
+let x=select(v.x,v.x*2.0,v.x<0.0);
+let n=arrayLength(&ifsFunctions);
+let v=vec2<f32>(0);
+}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+    });
+
+    it("formats long additive chain idempotently", async () => {
+      const input = `
+fn f(workgroup_id:vec3<u32>,num_workgroups_vec:vec3<u32>){
+let workgroup_index=workgroup_id.x+workgroup_id.y*num_workgroups_vec.x+workgroup_id.z*num_workgroups_vec.x*num_workgroups_vec.y;
+}`;
+      await assertIdempotent(input);
+      await assertIdempotent80(input);
+    });
+
+    it("collapses multiple blank lines between top-level decls", async () => {
+      const input = `const pi = radians(180f);
+
+
+const tau = radians(360f);
+
+
+
+const workgroup_size: u32 = 128;
+`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+    });
+
+    it("formats compute shader excerpt with bare block, nested for, continue, atomicAdd, bitcast", async () => {
+      const input = `
+@compute@workgroup_size(128)
+fn computeMain(
+@builtin(num_workgroups) num_workgroups_vec:vec3<u32>,
+@builtin(workgroup_id) workgroup_id:vec3<u32>,
+@builtin(global_invocation_id) global_id:vec3<u32>,
+@builtin(local_invocation_index) local_invocation_index:u32,
+){
+let idx=f32(global_id.x);
+var p:vec2<f32>;
+{
+let percent=idx/f32(1024);
+let angle=fract(percent+0.5)*6.28*25;
+p=vec2<f32>(sin(angle),cos(angle))*(0.2+1.8*sin(percent*3.14));
+}
+var seed:u32=bitcast<u32>((p.x+idx)*0.345234);
+for(var i=0u;i<100u;i++){
+let funcIdx=u32(floor(xor_shift(&seed)*f32(4)));
+if i<20u{continue;}
+for(var j=0u;j<4u;j++){
+let flatIdx:u32=0u;
+atomicAdd(&data[flatIdx].r,1u);
+}
+}
+}`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+      await assertIdempotent(input);
+      await assertIdempotent80(input);
+    });
+  });
+
   describe("comments", () => {
     it("preserves line comments", async () => {
       const input = `// This is a shader\nconst x = 1;`;
@@ -307,4 +442,5 @@ return colorize(iter);
       expect(result).toMatchSnapshot();
     });
   });
+
 });

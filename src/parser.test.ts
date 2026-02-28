@@ -67,6 +67,26 @@ describe("parser", () => {
       });
     });
 
+    it("parses hex integer literals", () => {
+      const ast = parse("const x = 0xFFFFFFFF;");
+      expect(ast.declarations[0]).toMatchObject({
+        kind: "ConstDeclaration",
+        name: "x",
+        initializer: { kind: "LiteralExpr", value: "0xFFFFFFFF", literalType: "int" },
+      });
+    });
+
+    it("parses hex integer literals in function calls", () => {
+      const ast = parse("fn f() { let x = f32(0xFFFFFFFF); }");
+      const body = (ast.declarations[0] as any).body;
+      const callExpr = body.statements[0].initializer;
+      expect(callExpr).toMatchObject({
+        kind: "CallExpr",
+        callee: "f32",
+        args: [{ kind: "LiteralExpr", value: "0xFFFFFFFF", literalType: "int" }],
+      });
+    });
+
     it("parses var declaration with qualifier", () => {
       const ast = parse("var<uniform> model: mat4x4<f32>;");
       const decl = ast.declarations[0];

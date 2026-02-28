@@ -80,25 +80,33 @@ export const Ident = createToken({ name: "Ident", pattern: /[a-zA-Z_][a-zA-Z0-9_
 export const Underscore = createToken({ name: "Underscore", pattern: /_(?![a-zA-Z0-9_])/ });
 
 // Numbers — order matters: hex float before hex int, float before int
+// Category tokens for parser matching (like BoolLiteral pattern)
+export const FloatLiteral = createToken({ name: "FloatLiteral", pattern: Lexer.NA });
+export const IntLiteral = createToken({ name: "IntLiteral", pattern: Lexer.NA });
+
 export const HexFloatLiteral = createToken({
-  name: "FloatLiteral",
+  name: "HexFloatLiteral",
   pattern: /0[xX][0-9a-fA-F]*\.[0-9a-fA-F]*(?:[pP][+-]?[0-9]+)?[fh]?|0[xX][0-9a-fA-F]+[pP][+-]?[0-9]+[fh]?/,
+  categories: [FloatLiteral],
 });
 
-export const FloatLiteral = createToken({
-  name: "FloatLiteral",
+export const DecFloatLiteral = createToken({
+  name: "DecFloatLiteral",
   pattern:
     /[0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+[eE][+-]?[0-9]+[fh]?|[0-9]+[fh]/,
+  categories: [FloatLiteral],
 });
 
 export const HexIntLiteral = createToken({
-  name: "IntLiteral",
+  name: "HexIntLiteral",
   pattern: /0[xX][0-9a-fA-F]+[ui]?/,
+  categories: [IntLiteral],
 });
 
-export const IntLiteral = createToken({
-  name: "IntLiteral",
+export const DecIntLiteral = createToken({
+  name: "DecIntLiteral",
   pattern: /[0-9]+[ui]?/,
+  categories: [IntLiteral],
 });
 
 // ─── Multi-char operators (longer first) ──────────────────────
@@ -244,9 +252,9 @@ const allTokens: TokenType[] = [
   // Literals (hex float must come before hex int, float before int)
   // Must come before Dot so ".5" is FloatLiteral not Dot+IntLiteral
   HexFloatLiteral,
-  FloatLiteral,
+  DecFloatLiteral,
   HexIntLiteral,
-  IntLiteral,
+  DecIntLiteral,
 
   // Punctuation
   LBrace,
@@ -273,6 +281,8 @@ const allTokens: TokenType[] = [
   Ident,
 
   // Category tokens (not produced by lexer, used for parser grouping)
+  FloatLiteral,
+  IntLiteral,
   BoolLiteral,
 
   // Virtual tokens (set by disambiguator, not produced by lexer)

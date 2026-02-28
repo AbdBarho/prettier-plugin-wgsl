@@ -1,0 +1,107 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`printer > large switch > formats 30-case switch with u-suffixed selectors 1`] = `
+"fn f(
+  v: vec2<f32>,
+  idx: u32,
+  m: mat3x3<f32>,
+  r: ptr<function, u32>,
+) -> vec2<f32> {
+  switch idx {
+    case 0u: {
+      return fn_0(v, m, r);
+    }
+    case 1u: {
+      return fn_1(v, m, r);
+    }
+    case 2u: {
+      return fn_2(v, m, r);
+    }
+    case 3u: {
+      return fn_3(v, m, r);
+    }
+    case 4u: {
+      return fn_4(v, m, r);
+    }
+    case 5u: {
+      return fn_5(v, m, r);
+    }
+    case 6u: {
+      return fn_6(v, m, r);
+    }
+    case 7u: {
+      return fn_7(v, m, r);
+    }
+    case 8u: {
+      return fn_8(v, m, r);
+    }
+    case 9u: {
+      return fn_9(v, m, r);
+    }
+    case 10u: {
+      return fn_10(v, m, r);
+    }
+    case 11u: {
+      return fn_11(v, m, r);
+    }
+    case 12u: {
+      return fn_12(v, m, r);
+    }
+    case 13u: {
+      return fn_13(v, m, r);
+    }
+    case 14u: {
+      return fn_14(v, m, r);
+    }
+    case 15u: {
+      return fn_15(v, m, r);
+    }
+    case 16u: {
+      return fn_16(v, m, r);
+    }
+    case 17u: {
+      return fn_17(v, m, r);
+    }
+    case 18u: {
+      return fn_18(v, m, r);
+    }
+    case 19u: {
+      return fn_19(v, m, r);
+    }
+    case 20u: {
+      return fn_20(v, m, r);
+    }
+    case 21u: {
+      return fn_21(v, m, r);
+    }
+    case 22u: {
+      return fn_22(v, m, r);
+    }
+    case 23u: {
+      return fn_23(v, m, r);
+    }
+    case 24u: {
+      return fn_24(v, m, r);
+    }
+    case 25u: {
+      return fn_25(v, m, r);
+    }
+    case 26u: {
+      return fn_26(v, m, r);
+    }
+    case 27u: {
+      return fn_27(v, m, r);
+    }
+    case 28u: {
+      return fn_28(v, m, r);
+    }
+    case 29u: {
+      return fn_29(v, m, r);
+    }
+    default: {
+      return vec2<f32>(0);
+    }
+  }
+}
+"
+`;

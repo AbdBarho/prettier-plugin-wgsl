@@ -82,7 +82,7 @@ describe("lexer", () => {
   describe("numbers", () => {
     it("tokenizes integer literals", () => {
       expect(values("0 42 100")).toEqual(["0", "42", "100"]);
-      expect(kindsNoComments("42")).toEqual(["IntLiteral"]);
+      expect(kindsNoComments("42")).toEqual(["DecIntLiteral"]);
     });
 
     it("tokenizes suffixed integers", () => {
@@ -91,12 +91,12 @@ describe("lexer", () => {
 
     it("tokenizes hex literals", () => {
       expect(values("0xFF 0x1A2B")).toEqual(["0xFF", "0x1A2B"]);
-      expect(kindsNoComments("0xFF")).toEqual(["IntLiteral"]);
+      expect(kindsNoComments("0xFF")).toEqual(["HexIntLiteral"]);
     });
 
     it("tokenizes float literals", () => {
       expect(values("3.14 0.5 .5")).toEqual(["3.14", "0.5", ".5"]);
-      expect(kindsNoComments("3.14")).toEqual(["FloatLiteral"]);
+      expect(kindsNoComments("3.14")).toEqual(["DecFloatLiteral"]);
     });
 
     it("tokenizes float with exponent", () => {
@@ -109,7 +109,7 @@ describe("lexer", () => {
 
     it("tokenizes hex floats", () => {
       expect(values("0x1.0p10")).toEqual(["0x1.0p10"]);
-      expect(kindsNoComments("0x1.0p10")).toEqual(["FloatLiteral"]);
+      expect(kindsNoComments("0x1.0p10")).toEqual(["HexFloatLiteral"]);
     });
   });
 

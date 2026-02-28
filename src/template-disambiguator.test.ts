@@ -25,7 +25,7 @@ describe("template disambiguator", () => {
     const kinds = kindsAfterDisambig("array<vec3<f32>, 4>");
     expect(kinds).toEqual([
       "Ident", "TemplateArgsOpen", "Ident", "TemplateArgsOpen", "Ident",
-      "TemplateArgsClose", "Comma", "IntLiteral", "TemplateArgsClose",
+      "TemplateArgsClose", "Comma", "DecIntLiteral", "TemplateArgsClose",
     ]);
   });
 
