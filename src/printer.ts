@@ -65,19 +65,11 @@ function needsBlankLineBetween(prev: Declaration, curr: Declaration): boolean {
 let originalText = "";
 
 // Helper to call a child through Prettier's path traversal (enables comment injection)
-function callChild(
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-  field: string,
-): Doc {
+function callChild(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc, field: string): Doc {
   return path.call(printFn, field as never);
 }
 
-function mapChildren(
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-  field: string,
-): Doc[] {
+function mapChildren(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc, field: string): Doc[] {
   return path.map(printFn, field as never);
 }
 
@@ -96,11 +88,7 @@ export const print: Printer<ASTNode>["print"] = function printNode(
 };
 
 // Path-based dispatch that enables Prettier comment injection for container nodes
-function printASTNodeFromPath(
-  node: ASTNode,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printASTNodeFromPath(node: ASTNode, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   switch (node.kind) {
     case "TranslationUnit":
       return printTranslationUnitFromPath(node, path, printFn);
@@ -198,11 +186,7 @@ function printASTNode(node: ASTNode): Doc {
 
 // ─── Path-based container printers (enable Prettier comment injection) ───
 
-function printTranslationUnitFromPath(
-  node: TranslationUnit,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printTranslationUnitFromPath(node: TranslationUnit, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   // Use path-based traversal for declarations so comments can be attached
   const directiveDocs = mapChildren(path, printFn, "directives");
   const declDocs = mapChildren(path, printFn, "declarations");
@@ -214,36 +198,24 @@ function printFunctionDeclarationFromPath(
   path: AstPath<ASTNode>,
   printFn: (path: AstPath<ASTNode>) => Doc,
 ): Doc {
-  return buildFunctionDeclaration(node, callChild(path, printFn, "body"));
+  const attrDocs = mapChildren(path, printFn, "attributes");
+  const paramDocs = mapChildren(path, printFn, "params");
+  const returnAttrDocs = mapChildren(path, printFn, "returnAttributes");
+  const bodyDoc = callChild(path, printFn, "body");
+  return buildFunctionDeclaration(node, bodyDoc, attrDocs, paramDocs, returnAttrDocs);
 }
 
-function printBlockFromPath(
-  node: Block,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printBlockFromPath(node: Block, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   if (node.statements.length === 0) return "{}";
   const stmtDocs = mapChildren(path, printFn, "statements");
   const stmts = node.statements.map((s, i) => ({ node: s, doc: stmtDocs[i] }));
-  return [
-    "{",
-    indent([hardline, ...printStatementList(stmts)]),
-    hardline,
-    "}",
-  ];
+  return ["{", indent([hardline, ...printStatementList(stmts)]), hardline, "}"];
 }
 
-function printIfStmtFromPath(
-  node: IfStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printIfStmtFromPath(node: IfStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   const condDoc = printASTNode(node.condition);
   const bodyDoc = callChild(path, printFn, "body");
-  const parts: Doc[] = [
-    group(["if", indent([line, condDoc]), line]),
-    bodyDoc,
-  ];
+  const parts: Doc[] = [group(["if", indent([line, condDoc]), line]), bodyDoc];
 
   if (node.elseClause) {
     parts.push(" else ", callChild(path, printFn, "elseClause"));
@@ -252,11 +224,7 @@ function printIfStmtFromPath(
   return parts;
 }
 
-function printLoopStmtFromPath(
-  node: LoopStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printLoopStmtFromPath(node: LoopStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   if (node.continuing) {
     const continuingDoc = callChild(path, printFn, "continuing");
     const stmts = node.body.statements.map((s) => ({ node: s, doc: printASTNode(s) }));
@@ -270,93 +238,51 @@ function printLoopStmtFromPath(
   return ["loop ", callChild(path, printFn, "body")];
 }
 
-function printWhileStmtFromPath(
-  node: WhileStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
-  return [
-    group(["while", indent([line, printASTNode(node.condition)]), line]),
-    callChild(path, printFn, "body"),
-  ];
+function printWhileStmtFromPath(node: WhileStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
+  return [group(["while", indent([line, printASTNode(node.condition)]), line]), callChild(path, printFn, "body")];
 }
 
-function printForStmtFromPath(
-  node: ForStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printForStmtFromPath(node: ForStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   const init = node.init ? printStmtNoSemicolon(node.init) : "";
   const cond = node.condition ? printASTNode(node.condition) : "";
   const update = node.update ? printStmtNoSemicolon(node.update) : "";
 
   return [
-    group([
-      "for (",
-      indent([softline, init, ";", line, cond, ";", line, update]),
-      softline,
-      ")",
-    ]),
+    group(["for (", indent([softline, init, ";", line, cond, ";", line, update]), softline, ")"]),
     " ",
     callChild(path, printFn, "body"),
   ];
 }
 
-function printStructDeclarationFromPath(
-  node: StructDeclaration,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printStructDeclarationFromPath(node: StructDeclaration, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   if (node.members.length === 0) {
     return ["struct ", node.name, " {}"];
   }
   const memberDocs = mapChildren(path, printFn, "members");
-  return [
-    "struct ",
-    node.name,
-    " {",
-    indent([hardline, join([",", hardline], memberDocs)]),
-    ",",
-    hardline,
-    "}",
-  ];
+  return ["struct ", node.name, " {", indent([hardline, join([",", hardline], memberDocs)]), ",", hardline, "}"];
 }
 
-function printCaseClauseFromPath(
-  node: CaseClause,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printCaseClauseFromPath(node: CaseClause, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   const isDefault = node.selectors.length === 1 && node.selectors[0].kind === "DefaultSelector";
   const selectorDoc = isDefault
     ? "default"
-    : ["case ", join(", ", node.selectors.map((s) => printASTNode(s)))];
+    : [
+        "case ",
+        join(
+          ", ",
+          node.selectors.map((s) => printASTNode(s)),
+        ),
+      ];
   return [selectorDoc, ": ", callChild(path, printFn, "body")];
 }
 
-function printSwitchStmtFromPath(
-  node: SwitchStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
+function printSwitchStmtFromPath(node: SwitchStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
   const clauseDocs = mapChildren(path, printFn, "clauses");
-  return [
-    "switch ",
-    printASTNode(node.expr),
-    " {",
-    indent([hardline, join(hardline, clauseDocs)]),
-    hardline,
-    "}",
-  ];
+  return ["switch ", printASTNode(node.expr), " {", indent([hardline, join(hardline, clauseDocs)]), hardline, "}"];
 }
 
-function printContinuingStmtFromPath(
-  node: ContinuingStmt,
-  path: AstPath<ASTNode>,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
-  const stmts: { node: { start: number; end: number }; doc: Doc }[] =
-    node.body.statements.map((s) => ({ node: s, doc: printASTNode(s) }));
+function printContinuingStmtFromPath(node: ContinuingStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
+  const stmts: { node: { start: number; end: number }; doc: Doc }[] = node.body.statements.map((s) => ({ node: s, doc: printASTNode(s) }));
   if (node.breakIf) {
     stmts.push({
       node: { start: node.breakIf.start, end: node.breakIf.end },
@@ -385,7 +311,11 @@ function buildTranslationUnitDoc(node: TranslationUnit, directiveDocs: Doc[], de
         result.push(hardline);
       } else {
         const di = i - directiveCount;
-        if (needsBlankLineBetween(node.declarations[di - 1], node.declarations[di])) {
+        const prev = node.declarations[di - 1];
+        const curr = node.declarations[di];
+        if (needsBlankLineBetween(prev, curr)) {
+          result.push(hardline, hardline);
+        } else if (hasBlankLineBetween(prev.end, curr.start)) {
           result.push(hardline, hardline);
         } else {
           result.push(hardline);
@@ -398,41 +328,54 @@ function buildTranslationUnitDoc(node: TranslationUnit, directiveDocs: Doc[], de
   return result;
 }
 
-function buildFunctionDeclaration(node: FunctionDeclaration, bodyDoc: Doc): Doc {
+function buildFunctionDeclaration(
+  node: FunctionDeclaration,
+  bodyDoc: Doc,
+  attrDocs?: Doc[],
+  paramDocs?: Doc[],
+  returnAttrDocs?: Doc[],
+): Doc {
   const parts: Doc[] = [];
+
+  const resolvedAttrDocs = attrDocs ?? node.attributes.map((a) => printASTNode(a));
+  const resolvedParamDocs = paramDocs ?? node.params.map((p) => printASTNode(p));
+  const resolvedReturnAttrDocs = returnAttrDocs ?? node.returnAttributes.map((a) => printASTNode(a));
 
   const { entryAttrs, otherAttrs } = printFunctionAttributes(node.attributes);
 
+  // Partition the rendered attribute docs to match the entry/other split
+  const entryAttrDocs: Doc[] = [];
+  const otherAttrDocs: Doc[] = [];
+  for (let i = 0; i < node.attributes.length; i++) {
+    if (ENTRY_POINT_ATTRS.has(node.attributes[i].name)) {
+      entryAttrDocs.push(resolvedAttrDocs[i]);
+    } else {
+      otherAttrDocs.push(resolvedAttrDocs[i]);
+    }
+  }
+
   if (entryAttrs.length > 0) {
-    parts.push(join(" ", entryAttrs.map((a) => printASTNode(a))));
+    parts.push(join(" ", entryAttrDocs));
     if (otherAttrs.length > 0) {
-      parts.push(" ", join(" ", otherAttrs.map((a) => printASTNode(a))));
+      parts.push(" ", join(" ", otherAttrDocs));
     }
     parts.push(hardline);
   } else if (otherAttrs.length > 0) {
-    parts.push(join(" ", otherAttrs.map((a) => printASTNode(a))), hardline);
+    parts.push(join(" ", otherAttrDocs), hardline);
   }
 
   parts.push("fn ", node.name);
 
-  if (node.params.length === 0) {
+  if (resolvedParamDocs.length === 0) {
     parts.push("()");
   } else {
-    parts.push(
-      group([
-        "(",
-        indent([softline, join([",", line], node.params.map((p) => printASTNode(p)))]),
-        ifBreak(",", ""),
-        softline,
-        ")",
-      ]),
-    );
+    parts.push(printDelimitedList("(", ")", resolvedParamDocs));
   }
 
   if (node.returnType) {
     parts.push(" -> ");
-    if (node.returnAttributes.length > 0) {
-      parts.push(join(" ", node.returnAttributes.map((a) => printASTNode(a))), " ");
+    if (resolvedReturnAttrDocs.length > 0) {
+      parts.push(join(" ", resolvedReturnAttrDocs), " ");
     }
     parts.push(printASTNode(node.returnType));
   }
@@ -471,7 +414,13 @@ function printAttribute(node: Attribute): Doc {
 
 function printAttributes(attrs: Attribute[]): Doc {
   if (attrs.length === 0) return "";
-  return [join(" ", attrs.map((a) => printASTNode(a))), " "];
+  return [
+    join(
+      " ",
+      attrs.map((a) => printASTNode(a)),
+    ),
+    " ",
+  ];
 }
 
 function printFunctionAttributes(attrs: Attribute[]): { entryAttrs: Attribute[]; otherAttrs: Attribute[] } {
@@ -583,16 +532,20 @@ function printConstAssert(node: ConstAssertStatement): Doc {
   return ["const_assert ", printASTNode(node.expr), ";"];
 }
 
+function printDelimitedList(open: string, close: string, items: Doc[]): Doc {
+  if (items.length === 0) return [open, close];
+  return group([open, indent([softline, join([",", line], items)]), ifBreak(",", ""), softline, close]);
+}
+
 function printTypeExpr(node: TypeExpr): Doc {
   if (node.templateArgs.length === 0) return node.name;
   return [
     node.name,
-    "<",
-    join(
-      ", ",
+    printDelimitedList(
+      "<",
+      ">",
       node.templateArgs.map((a) => printASTNode(a)),
     ),
-    ">",
   ];
 }
 
@@ -634,12 +587,7 @@ function printBlock(node: Block): Doc {
 
   const stmts = node.statements.map((s) => ({ node: s, doc: printASTNode(s) }));
 
-  return [
-    "{",
-    indent([hardline, ...printStatementList(stmts)]),
-    hardline,
-    "}",
-  ];
+  return ["{", indent([hardline, ...printStatementList(stmts)]), hardline, "}"];
 }
 
 function printReturnStmt(node: ReturnStmt): Doc {
@@ -652,10 +600,7 @@ function printReturnStmt(node: ReturnStmt): Doc {
 function printIfStmt(node: IfStmt): Doc {
   const condDoc = printASTNode(node.condition);
   const bodyDoc = printBlock(node.body);
-  const parts: Doc[] = [
-    group(["if", indent([line, condDoc]), line]),
-    bodyDoc,
-  ];
+  const parts: Doc[] = [group(["if", indent([line, condDoc]), line]), bodyDoc];
 
   if (node.elseClause) {
     if (node.elseClause.kind === "IfStmt") {
@@ -705,13 +650,7 @@ function printStmtNoSemicolon(stmt: Stmt): Doc {
 }
 
 function printAssignStmt(node: AssignStmt): Doc {
-  return group([
-    printASTNode(node.target),
-    " ",
-    node.op,
-    indent([line, printASTNode(node.value)]),
-    ";",
-  ]);
+  return group([printASTNode(node.target), " ", node.op, indent([line, printASTNode(node.value)]), ";"]);
 }
 
 function printIncrDecrStmt(node: IncrDecrStmt): Doc {
@@ -771,10 +710,7 @@ function flattenBinaryChain(node: BinaryExpr): { parts: Expr[]; ops: string[] } 
   const ops: string[] = [];
 
   function collect(n: Expr): void {
-    if (
-      n.kind === "BinaryExpr" &&
-      getBinaryPrecedenceGroup(n.op) === prec
-    ) {
+    if (n.kind === "BinaryExpr" && getBinaryPrecedenceGroup(n.op) === prec) {
       collect(n.left);
       ops.push(n.op);
       parts.push(n.right);
@@ -815,38 +751,100 @@ function printCallExpr(node: CallExpr): Doc {
   const parts: Doc[] = [node.callee];
   if (node.templateArgs.length > 0) {
     parts.push(
-      "<",
-      join(
-        ", ",
+      printDelimitedList(
+        "<",
+        ">",
         node.templateArgs.map((a) => printASTNode(a)),
       ),
-      ">",
     );
   }
   parts.push(
-    group([
+    printDelimitedList(
       "(",
-      indent([
-        softline,
-        join(
-          [",", line],
-          node.args.map((a) => printASTNode(a)),
-        ),
-      ]),
-      ifBreak(",", ""),
-      softline,
       ")",
-    ]),
+      node.args.map((a) => printASTNode(a)),
+    ),
   );
   return parts;
 }
 
+type ChainPart = { type: "member"; name: string } | { type: "index"; index: Expr };
+
+function flattenMemberChain(node: MemberExpr | IndexExpr): { head: Expr; chain: ChainPart[] } {
+  const chain: ChainPart[] = [];
+  let current: Expr = node;
+
+  while (current.kind === "MemberExpr" || current.kind === "IndexExpr") {
+    if (current.kind === "MemberExpr") {
+      chain.push({ type: "member", name: current.member });
+      current = current.object;
+    } else {
+      chain.push({ type: "index", index: current.index });
+      current = current.object;
+    }
+  }
+
+  chain.reverse();
+  return { head: current, chain };
+}
+
+function printMemberOrIndexChain(node: MemberExpr | IndexExpr): Doc {
+  const { head, chain } = flattenMemberChain(node);
+  const headDoc = printASTNode(head);
+
+  if (chain.length < 3) {
+    // Short chain: print flat
+    const parts: Doc[] = [headDoc];
+    for (const part of chain) {
+      if (part.type === "member") {
+        parts.push(".", part.name);
+      } else {
+        parts.push("[", printASTNode(part.index), "]");
+      }
+    }
+    return parts;
+  }
+
+  // Long chain: wrap at . boundaries
+  const chainDocs: Doc[] = [];
+  for (const part of chain) {
+    if (part.type === "member") {
+      chainDocs.push([".", part.name]);
+    } else {
+      // Index access stays attached to previous part
+      chainDocs.push(["[", printASTNode(part.index), "]"]);
+    }
+  }
+
+  // Group consecutive index accesses with the preceding member access
+  const groupedDocs: Doc[][] = [];
+  for (const doc of chainDocs) {
+    if (Array.isArray(doc) && Array.isArray(doc[0]) === false && doc[0] === "[") {
+      // Index access — attach to previous group
+      if (groupedDocs.length > 0) {
+        groupedDocs[groupedDocs.length - 1].push(doc);
+      } else {
+        groupedDocs.push([doc]);
+      }
+    } else {
+      groupedDocs.push([doc]);
+    }
+  }
+
+  const indentedParts: Doc[] = [];
+  for (const g of groupedDocs) {
+    indentedParts.push(softline, ...g);
+  }
+
+  return group([headDoc, indent(indentedParts)]);
+}
+
 function printMemberExpr(node: MemberExpr): Doc {
-  return [printASTNode(node.object), ".", node.member];
+  return printMemberOrIndexChain(node);
 }
 
 function printIndexExpr(node: IndexExpr): Doc {
-  return [printASTNode(node.object), "[", printASTNode(node.index), "]"];
+  return printMemberOrIndexChain(node);
 }
 
 // ─── Prettier comment API ─────────────────────────────────────
@@ -855,9 +853,7 @@ export function canAttachComment(node: ASTNode): boolean {
   return node != null && typeof node === "object" && "kind" in node;
 }
 
-export function printComment(
-  commentPath: AstPath<CommentNode>,
-): Doc {
+export function printComment(commentPath: AstPath<CommentNode>): Doc {
   const node = commentPath.node;
   return node.value;
 }
@@ -879,7 +875,12 @@ export function getCommentChildNodes(node: ASTNode): ASTNode[] {
     case "IfStmt":
       return [node.condition, node.body, ...(node.elseClause ? [node.elseClause] : [])];
     case "ForStmt":
-      return [...(node.init ? [node.init] : []), ...(node.condition ? [node.condition] : []), ...(node.update ? [node.update] : []), node.body];
+      return [
+        ...(node.init ? [node.init] : []),
+        ...(node.condition ? [node.condition] : []),
+        ...(node.update ? [node.update] : []),
+        node.body,
+      ];
     case "WhileStmt":
       return [node.condition, node.body];
     case "LoopStmt":

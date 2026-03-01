@@ -1,12 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`printer > large switch > formats 30-case switch with u-suffixed selectors 1`] = `
-"fn f(
-  v: vec2<f32>,
-  idx: u32,
-  m: mat3x3<f32>,
-  r: ptr<function, u32>,
-) -> vec2<f32> {
+"fn f(v: vec2<f32>, idx: u32, m: mat3x3<f32>, r: ptr<function, u32>) -> vec2<
+  f32,
+> {
   switch idx {
     case 0u: {
       return fn_0(v, m, r);

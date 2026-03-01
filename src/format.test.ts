@@ -9,20 +9,28 @@ function fixture(name: string): string {
   return readFileSync(resolve(__dirname, "fixtures", name), "utf-8");
 }
 
-async function fmt(input: string): Promise<string> {
+async function fmt(input: string, printWidth: number = 120): Promise<string> {
   const result = await prettier.format(input, {
     parser: "wgsl",
     plugins: [(await import("./index.ts")).default],
-    printWidth: 120,
+    printWidth,
     tabWidth: 2,
   });
   return result;
 }
 
-async function assertIdempotent(input: string): Promise<void> {
-  const first = await fmt(input);
-  const second = await fmt(first);
+async function assertIdempotent(input: string, printWidth: number = 120): Promise<void> {
+  const first = await fmt(input, printWidth);
+  const second = await fmt(first, printWidth);
   expect(second).toBe(first);
+}
+
+const IDEMPOTENCY_WIDTHS = [40, 80, 120] as const;
+
+async function assertIdempotentAtAllWidths(input: string): Promise<void> {
+  for (const w of IDEMPOTENCY_WIDTHS) {
+    await assertIdempotent(input, w);
+  }
 }
 
 describe("end-to-end formatting", () => {
@@ -42,7 +50,7 @@ return output;
     `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats a compute shader", async () => {
@@ -57,7 +65,7 @@ data[i]=data[i]*2.0;
     `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats a fragment shader with if/else", async () => {
@@ -70,21 +78,21 @@ return color;
     `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats nested expressions correctly", async () => {
     const input = `const x=(a+b)*(c-d)/e;`;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats multiple directives before declarations", async () => {
     const input = `enable f16;diagnostic(off,derivative_uniformity);const X=1;`;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats all compound assignment operators", async () => {
@@ -100,7 +108,7 @@ return color;
     const input = `fn f(){a.b[i].c[j].d=1;}`;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats const_assert", async () => {
@@ -117,7 +125,7 @@ return color;
     const input = `fn f(){switch x{case 1,2,3:{break;}default:{break;}}}`;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats empty struct", async () => {
@@ -156,7 +164,7 @@ fn vs(@location(0) pos: vec3f) -> @builtin(position) vec4f {
   return uniforms.viewMatrix * uniforms.modelMatrix * vec4f(pos, 1.0);
 }
     `;
-    await assertIdempotent(shader);
+    await assertIdempotentAtAllWidths(shader);
   });
 
   it("formats a particle simulation compute shader", async () => {
@@ -181,7 +189,7 @@ particlesOut[idx]=p;
 `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats a vertex + fragment shader with textures", async () => {
@@ -212,7 +220,7 @@ return diffuse+ambient;
 `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("formats a mandelbrot shader with directives, switch, and loop/continuing", async () => {
@@ -257,7 +265,7 @@ return colorize(iter);
 `;
     const result = await fmt(input);
     expect(result).toMatchSnapshot();
-    await assertIdempotent(input);
+    await assertIdempotentAtAllWidths(input);
   });
 
   describe("real-world shaders (from gfx-rs/wgpu, Apache-2.0/MIT)", () => {
@@ -266,7 +274,7 @@ return colorize(iter);
       const input = fixture("shadow.wgsl");
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     // Source: https://github.com/gfx-rs/wgpu/blob/trunk/examples/features/src/boids/compute.wgsl
@@ -274,7 +282,7 @@ return colorize(iter);
       const input = fixture("boids.wgsl");
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     // Source: https://github.com/gfx-rs/wgpu/blob/trunk/examples/features/src/skybox/shader.wgsl
@@ -282,7 +290,7 @@ return colorize(iter);
       const input = fixture("skybox.wgsl");
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     // Source: https://github.com/gfx-rs/wgpu/blob/trunk/examples/features/src/water/water.wgsl
@@ -290,26 +298,11 @@ return colorize(iter);
       const input = fixture("water.wgsl");
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
   });
 
   describe("advanced WGSL features", () => {
-    async function fmt80(input: string): Promise<string> {
-      return prettier.format(input, {
-        parser: "wgsl",
-        plugins: [(await import("./index.ts")).default],
-        printWidth: 80,
-        tabWidth: 2,
-      });
-    }
-
-    async function assertIdempotent80(input: string): Promise<void> {
-      const first = await fmt80(input);
-      const second = await fmt80(first);
-      expect(second).toBe(first);
-    }
-
     it("formats xor_shift function with ptr, deref, xor-assign, shift, hex", async () => {
       const input = `
 fn xor_shift(state:ptr<function,u32>)->f32{
@@ -322,8 +315,8 @@ return f32(x)/f32(0xFFFFFFFF);
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
-      await assertIdempotent80(input);
+      await assertIdempotentAtAllWidths(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats atomic struct and atomic builtins", async () => {
@@ -340,7 +333,7 @@ atomicMax(&globalMaxHits,threadMaxHits);
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats numeric literals with suffixes", async () => {
@@ -356,7 +349,7 @@ if i<20u{continue;}
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats builtins: bitcast, select, arrayLength, typed vec constructor", async () => {
@@ -369,7 +362,7 @@ let v=vec2<f32>(0);
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats long additive chain idempotently", async () => {
@@ -377,8 +370,8 @@ let v=vec2<f32>(0);
 fn f(workgroup_id:vec3<u32>,num_workgroups_vec:vec3<u32>){
 let workgroup_index=workgroup_id.x+workgroup_id.y*num_workgroups_vec.x+workgroup_id.z*num_workgroups_vec.x*num_workgroups_vec.y;
 }`;
-      await assertIdempotent(input);
-      await assertIdempotent80(input);
+      await assertIdempotentAtAllWidths(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("collapses multiple blank lines between top-level decls", async () => {
@@ -393,7 +386,7 @@ const workgroup_size: u32 = 128;
 `;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats compute shader excerpt with bare block, nested for, continue, atomicAdd, bitcast", async () => {
@@ -424,8 +417,8 @@ atomicAdd(&data[flatIdx].r,1u);
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotent(input);
-      await assertIdempotent80(input);
+      await assertIdempotentAtAllWidths(input);
+      await assertIdempotentAtAllWidths(input);
     });
   });
 
@@ -442,5 +435,4 @@ atomicAdd(&data[flatIdx].r,1u);
       expect(result).toMatchSnapshot();
     });
   });
-
 });

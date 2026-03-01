@@ -2,7 +2,9 @@
 
 exports[`end-to-end formatting > advanced WGSL features > collapses multiple blank lines between top-level decls 1`] = `
 "const pi = radians(180f);
+
 const tau = radians(360f);
+
 const workgroup_size: u32 = 128;
 "
 `;
@@ -726,6 +728,7 @@ struct Uniforms {
 const light_point = vec3<f32>(150.0, 70.0, 0.0);
 const light_colour = vec3<f32>(1.0, 0.98, 0.82);
 const one = vec4<f32>(1.0, 1.0, 1.0, 1.0);
+
 const Y_SCL: f32 = 0.86602540378443864676372317075294;
 const CURVE_BIAS: f32 = -0.1;
 const INV_1_CURVE_BIAS: f32 = 1.11111111111;
