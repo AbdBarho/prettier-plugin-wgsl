@@ -1,6 +1,6 @@
 {
   "name": "prettier-plugin-wgsl",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Prettier plugin for WGSL (WebGPU Shading Language)",
   "author": "Abdullah Barhoum",
   "license": "MIT",
@@ -12,6 +12,7 @@
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
+  "sideEffects": false,
   "files": [
     "dist"
   ],
