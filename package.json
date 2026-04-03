@@ -1,6 +1,6 @@
 {
   "name": "prettier-plugin-wgsl",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Prettier plugin for WGSL (WebGPU Shading Language)",
   "author": "Abdullah Barhoum",
   "license": "MIT",
@@ -32,23 +32,28 @@
   },
   "keywords": [
     "prettier",
+    "prettier-plugin",
     "plugin",
     "wgsl",
     "webgpu",
-    "formatter"
+    "gpu",
+    "shading-language",
+    "formatter",
+    "format",
+    "code-formatter"
   ],
   "peerDependencies": {
     "prettier": ">=3.0.0"
   },
   "dependencies": {
-    "chevrotain": "^11.1.2"
+    "chevrotain": "^12.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.3.2",
-    "@vitest/coverage-v8": "^4.0.7",
-    "prettier": "^3.5.3",
-    "tsdown": "^0.21.0-beta.2",
-    "typescript": "^5.8.2",
+    "@types/node": "^25.5.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "prettier": "^3.8.1",
+    "tsdown": "^0.21.7",
+    "typescript": "^6.0.2",
     "vitest": "^4.0.7"
   }
 }
