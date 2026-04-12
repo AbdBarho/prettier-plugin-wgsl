@@ -61,8 +61,37 @@ function needsBlankLineBetween(prev: Declaration, curr: Declaration): boolean {
   return true;
 }
 
-// Module-level original source text, set from Prettier options
-let originalText = "";
+// Precomputed blank-line lookup for efficient hasBlankLineBetween() checks.
+interface BlankLineInfo {
+  offsetToLine: Uint32Array;
+  blankLines: Set<number>;
+}
+
+function buildBlankLineInfo(text: string): BlankLineInfo {
+  const offsetToLine = new Uint32Array(text.length + 1);
+  const blankLines = new Set<number>();
+  let lineNum = 1;
+  let lineStart = 0;
+
+  for (let i = 0; i <= text.length; i++) {
+    offsetToLine[i] = lineNum;
+    if (i === text.length || text[i] === "\n") {
+      const lineContent = text.slice(lineStart, i);
+      if (lineContent.trim() === "") blankLines.add(lineNum);
+      lineNum++;
+      lineStart = i + 1;
+    }
+  }
+
+  return { offsetToLine, blankLines };
+}
+
+// Formatting context, initialized per print() call from Prettier options.
+// Scoped to a single formatting session.
+interface PrintContext {
+  blankLineInfo: BlankLineInfo;
+}
+let ctx: PrintContext = { blankLineInfo: { offsetToLine: new Uint32Array(0), blankLines: new Set() } };
 
 // Helper to call a child through Prettier's path traversal (enables comment injection)
 function callChild(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc, field: string): Doc {
@@ -80,9 +109,9 @@ export const print: Printer<ASTNode>["print"] = function printNode(
 ): Doc {
   const node = path.node;
   if (!node) return "";
-  // Capture original text on first call
+  // Capture original text on first call (Prettier calls print() once per node)
   if ("originalText" in options && typeof options.originalText === "string") {
-    originalText = options.originalText;
+    ctx = { blankLineInfo: buildBlankLineInfo(options.originalText) };
   }
   return printASTNodeFromPath(node, path, printFn);
 };
@@ -243,9 +272,9 @@ function printWhileStmtFromPath(node: WhileStmt, path: AstPath<ASTNode>, printFn
 }
 
 function printForStmtFromPath(node: ForStmt, path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const init = node.init ? printStmtNoSemicolon(node.init) : "";
+  const init = node.init ? printStmtForForLoop(node.init) : "";
   const cond = node.condition ? printASTNode(node.condition) : "";
-  const update = node.update ? printStmtNoSemicolon(node.update) : "";
+  const update = node.update ? printStmtForForLoop(node.update) : "";
 
   return [
     group(["for (", indent([softline, init, ";", line, cond, ";", line, update]), softline, ")"]),
@@ -466,7 +495,7 @@ function printStructMember(node: StructMember): Doc {
   return parts;
 }
 
-function printVarDeclaration(node: VarDeclaration): Doc {
+function printVarDeclaration(node: VarDeclaration, semicolon: boolean = true): Doc {
   const parts: Doc[] = [];
   if (node.attributes.length > 0) {
     parts.push(printAttributes(node.attributes));
@@ -481,30 +510,30 @@ function printVarDeclaration(node: VarDeclaration): Doc {
   }
   if (node.initializer) {
     parts.push(" =");
-    return group([...parts, indent([line, printASTNode(node.initializer)]), ";"]);
+    return group([...parts, indent([line, printASTNode(node.initializer)]), ...(semicolon ? [";"] : [])]);
   }
-  parts.push(";");
+  if (semicolon) parts.push(";");
   return parts;
 }
 
-function printLetDeclaration(node: LetDeclaration): Doc {
+function printLetDeclaration(node: LetDeclaration, semicolon: boolean = true): Doc {
   const parts: Doc[] = [];
   parts.push("let ", node.name);
   if (node.type) {
     parts.push(": ", printASTNode(node.type));
   }
   parts.push(" =");
-  return group([...parts, indent([line, printASTNode(node.initializer)]), ";"]);
+  return group([...parts, indent([line, printASTNode(node.initializer)]), ...(semicolon ? [";"] : [])]);
 }
 
-function printConstDeclaration(node: ConstDeclaration): Doc {
+function printConstDeclaration(node: ConstDeclaration, semicolon: boolean = true): Doc {
   const parts: Doc[] = [];
   parts.push("const ", node.name);
   if (node.type) {
     parts.push(": ", printASTNode(node.type));
   }
   parts.push(" =");
-  return group([...parts, indent([line, printASTNode(node.initializer)]), ";"]);
+  return group([...parts, indent([line, printASTNode(node.initializer)]), ...(semicolon ? [";"] : [])]);
 }
 
 function printOverrideDeclaration(node: OverrideDeclaration): Doc {
@@ -554,15 +583,12 @@ function printTypeExpr(node: TypeExpr): Doc {
 // Returns true if the source text between two offsets contains a blank line
 // A blank line is an empty line (or whitespace-only line) between two newlines
 function hasBlankLineBetween(fromEnd: number, toStart: number): boolean {
-  if (!originalText) return false;
-  const between = originalText.slice(fromEnd, toStart);
-  // Split into lines and check if any line (between first and last) is empty/whitespace-only
-  const lines = between.split("\n");
-  // We need 3+ parts (2+ newlines) AND at least one blank line between content
-  if (lines.length < 3) return false;
-  // Check if any middle line is empty or whitespace-only
-  for (let i = 1; i < lines.length - 1; i++) {
-    if (lines[i].trim() === "") return true;
+  const { offsetToLine, blankLines } = ctx.blankLineInfo;
+  if (offsetToLine.length === 0) return false;
+  const startLine = offsetToLine[fromEnd] ?? 0;
+  const endLine = offsetToLine[toStart] ?? 0;
+  for (let l = startLine; l <= endLine; l++) {
+    if (blankLines.has(l)) return true;
   }
   return false;
 }
@@ -613,52 +639,36 @@ function printIfStmt(node: IfStmt): Doc {
   return parts;
 }
 
-type DocWithContents = doc.builders.Group | doc.builders.Indent | doc.builders.Label | doc.builders.LineSuffix;
-
-function isDocWithContents(d: Doc): d is DocWithContents {
-  return typeof d === "object" && d !== null && !Array.isArray(d) && "contents" in d;
-}
-
-function stripTrailingSemicolon(d: Doc): Doc {
-  if (Array.isArray(d)) {
-    const last = d[d.length - 1];
-    if (last === ";") {
-      return d.slice(0, -1);
-    }
-    // Recursively strip from last element
-    const stripped = stripTrailingSemicolon(last);
-    if (stripped !== last) {
-      return [...d.slice(0, -1), stripped];
-    }
+// Print a statement without trailing semicolon (for for-loop init/update)
+function printStmtForForLoop(node: Stmt): Doc {
+  switch (node.kind) {
+    case "VarDeclaration":
+      return printVarDeclaration(node, false);
+    case "LetDeclaration":
+      return printLetDeclaration(node, false);
+    case "ConstDeclaration":
+      return printConstDeclaration(node, false);
+    case "AssignStmt":
+      return printAssignStmt(node, false);
+    case "IncrDecrStmt":
+      return printIncrDecrStmt(node, false);
+    case "ExprStmt":
+      return printExprStmt(node, false);
+    default:
+      throw new Error(`Unexpected statement kind in for-loop: ${(node as Stmt).kind}`);
   }
-  if (typeof d === "string" && d.endsWith(";")) {
-    return d.slice(0, -1);
-  }
-  // Handle Prettier doc commands (group, indent, etc.) that have contents
-  if (isDocWithContents(d)) {
-    const stripped = stripTrailingSemicolon(d.contents);
-    if (stripped !== d.contents) {
-      return { ...d, contents: stripped };
-    }
-  }
-  return d;
 }
 
-function printStmtNoSemicolon(stmt: Stmt): Doc {
-  // Print a statement but strip the trailing semicolon (for for-loop init/update)
-  return stripTrailingSemicolon(printASTNode(stmt));
+function printAssignStmt(node: AssignStmt, semicolon: boolean = true): Doc {
+  return group([printASTNode(node.target), " ", node.op, indent([line, printASTNode(node.value)]), ...(semicolon ? [";"] : [])]);
 }
 
-function printAssignStmt(node: AssignStmt): Doc {
-  return group([printASTNode(node.target), " ", node.op, indent([line, printASTNode(node.value)]), ";"]);
+function printIncrDecrStmt(node: IncrDecrStmt, semicolon: boolean = true): Doc {
+  return [printASTNode(node.target), node.op, ...(semicolon ? [";"] : [])];
 }
 
-function printIncrDecrStmt(node: IncrDecrStmt): Doc {
-  return [printASTNode(node.target), node.op, ";"];
-}
-
-function printExprStmt(node: ExprStmt): Doc {
-  return [printASTNode(node.expr), ";"];
+function printExprStmt(node: ExprStmt, semicolon: boolean = true): Doc {
+  return semicolon ? [printASTNode(node.expr), ";"] : printASTNode(node.expr);
 }
 
 function printPhonyAssignStmt(node: PhonyAssignStmt): Doc {

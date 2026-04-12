@@ -15,19 +15,31 @@ const plugin = (await import("./index.ts")).default;
 // 2s warmup for JIT stabilization, 5s measurement for sufficient samples
 const opts = { warmupTime: 2000, time: 5000 } as const;
 
-bench("lex", () => {
-  tokenize(source);
-}, opts);
+bench(
+  "lex",
+  () => {
+    tokenize(source);
+  },
+  opts,
+);
 
-bench("parse", () => {
-  parse(source);
-}, opts);
+bench(
+  "parse",
+  () => {
+    parse(source);
+  },
+  opts,
+);
 
-bench("format", async () => {
-  await prettier.format(source, {
-    parser: "wgsl",
-    plugins: [plugin],
-    printWidth: 120,
-    tabWidth: 2,
-  });
-}, opts);
+bench(
+  "format",
+  async () => {
+    await prettier.format(source, {
+      parser: "wgsl",
+      plugins: [plugin],
+      printWidth: 120,
+      tabWidth: 2,
+    });
+  },
+  opts,
+);

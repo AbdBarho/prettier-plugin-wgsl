@@ -296,14 +296,6 @@ fn fs(v: VertexOutput) -> @location(0) vec4f {
 "
 `;
 
-exports[`end-to-end formatting > formats address-of and dereference 1`] = `
-"fn f() {
-  let p = &v;
-  let x = *p;
-}
-"
-`;
-
 exports[`end-to-end formatting > formats all compound assignment operators > compound assignment %= 1`] = `
 "fn f() {
   x %= 1;
@@ -365,52 +357,11 @@ exports[`end-to-end formatting > formats const_assert 1`] = `
 "
 `;
 
-exports[`end-to-end formatting > formats deeply nested member/index access 1`] = `
-"fn f() {
-  a.b[i].c[j].d = 1;
-}
-"
-`;
-
-exports[`end-to-end formatting > formats empty struct 1`] = `
-"struct Empty {}
-"
-`;
-
 exports[`end-to-end formatting > formats multiple directives before declarations 1`] = `
 "enable f16;
 diagnostic(off, derivative_uniformity);
 
 const X = 1;
-"
-`;
-
-exports[`end-to-end formatting > formats nested expressions correctly 1`] = `
-"const x = (a + b) * (c - d) / e;
-"
-`;
-
-exports[`end-to-end formatting > formats parenthesized expressions 1`] = `
-"const x = (a + b);
-"
-`;
-
-exports[`end-to-end formatting > formats switch with multiple case selectors 1`] = `
-"fn f() {
-  switch x {
-    case 1, 2, 3: {
-      break;
-    }
-    default: {
-      break;
-    }
-  }
-}
-"
-`;
-
-exports[`end-to-end formatting > handles override with attributes 1`] = `
-"@id(0) override blockSize: u32 = 64;
 "
 `;
 

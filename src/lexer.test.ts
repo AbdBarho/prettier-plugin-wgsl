@@ -1,13 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { tokenize, TK } from "./tokens.ts";
-import type { IToken } from "./tokens.ts";
-
-function kinds(source: string): string[] {
-  const { tokens, comments } = tokenize(source);
-  // Merge comments back in by position for tests that check comment tokens
-  const all: IToken[] = [...tokens, ...comments].sort((a, b) => a.startOffset - b.startOffset);
-  return all.map((t) => t.tokenType.name);
-}
+import { tokenize } from "./tokens.ts";
 
 function kindsNoComments(source: string): string[] {
   return tokenize(source).tokens.map((t) => t.tokenType.name);
@@ -29,8 +21,17 @@ describe("lexer", () => {
   describe("punctuation", () => {
     it("tokenizes single-char punctuation", () => {
       expect(kindsNoComments("{ } ( ) [ ] ; : , . @")).toEqual([
-        "LBrace", "RBrace", "LParen", "RParen", "LBracket", "RBracket",
-        "Semicolon", "Colon", "Comma", "Dot", "At",
+        "LBrace",
+        "RBrace",
+        "LParen",
+        "RParen",
+        "LBracket",
+        "RBracket",
+        "Semicolon",
+        "Colon",
+        "Comma",
+        "Dot",
+        "At",
       ]);
     });
   });
@@ -48,18 +49,43 @@ describe("lexer", () => {
 
     it("tokenizes keywords", () => {
       expect(kindsNoComments("fn var struct if else for while return")).toEqual([
-        "Fn", "Var", "Struct", "If", "Else", "For", "While", "Return",
+        "Fn",
+        "Var",
+        "Struct",
+        "If",
+        "Else",
+        "For",
+        "While",
+        "Return",
       ]);
     });
 
     it("tokenizes all keywords correctly", () => {
       const kwMap: Record<string, string> = {
-        alias: "Alias", break: "Break", case: "Case", const: "Const",
-        const_assert: "ConstAssert", continue: "Continue", continuing: "Continuing",
-        default: "Default", diagnostic: "Diagnostic", discard: "Discard",
-        else: "Else", enable: "Enable", fn: "Fn", for: "For", if: "If",
-        let: "Let", loop: "Loop", override: "Override", requires: "Requires",
-        return: "Return", struct: "Struct", switch: "Switch", var: "Var", while: "While",
+        alias: "Alias",
+        break: "Break",
+        case: "Case",
+        const: "Const",
+        const_assert: "ConstAssert",
+        continue: "Continue",
+        continuing: "Continuing",
+        default: "Default",
+        diagnostic: "Diagnostic",
+        discard: "Discard",
+        else: "Else",
+        enable: "Enable",
+        fn: "Fn",
+        for: "For",
+        if: "If",
+        let: "Let",
+        loop: "Loop",
+        override: "Override",
+        requires: "Requires",
+        return: "Return",
+        struct: "Struct",
+        switch: "Switch",
+        var: "Var",
+        while: "While",
       };
       for (const [kw, name] of Object.entries(kwMap)) {
         expect(kindsNoComments(kw)).toEqual([name]);
@@ -116,22 +142,45 @@ describe("lexer", () => {
   describe("operators", () => {
     it("tokenizes single-char operators", () => {
       expect(kindsNoComments("+ - * / % & | ^ ~ !")).toEqual([
-        "Plus", "Minus", "Star", "Slash", "Percent",
-        "Amp", "Pipe", "Caret", "Tilde", "Bang",
+        "Plus",
+        "Minus",
+        "Star",
+        "Slash",
+        "Percent",
+        "Amp",
+        "Pipe",
+        "Caret",
+        "Tilde",
+        "Bang",
       ]);
     });
 
     it("tokenizes multi-char operators", () => {
       expect(kindsNoComments("-> == != <= >= && || ++ --")).toEqual([
-        "Arrow", "EqualEqual", "BangEqual", "LessEqual", "GreaterEqual",
-        "AmpAmp", "PipePipe", "PlusPlus", "MinusMinus",
+        "Arrow",
+        "EqualEqual",
+        "BangEqual",
+        "LessEqual",
+        "GreaterEqual",
+        "AmpAmp",
+        "PipePipe",
+        "PlusPlus",
+        "MinusMinus",
       ]);
     });
 
     it("tokenizes compound assignment operators", () => {
       expect(kindsNoComments("+= -= *= /= %= &= |= ^= <<= >>=")).toEqual([
-        "PlusEqual", "MinusEqual", "StarEqual", "SlashEqual", "PercentEqual",
-        "AmpEqual", "PipeEqual", "CaretEqual", "ShiftLeftEqual", "ShiftRightEqual",
+        "PlusEqual",
+        "MinusEqual",
+        "StarEqual",
+        "SlashEqual",
+        "PercentEqual",
+        "AmpEqual",
+        "PipeEqual",
+        "CaretEqual",
+        "ShiftLeftEqual",
+        "ShiftRightEqual",
       ]);
     });
 
@@ -185,17 +234,27 @@ describe("lexer", () => {
       const { tokens } = tokenize("@vertex fn main() -> @builtin(position) vec4f {");
       const k = tokens.map((t) => t.tokenType.name);
       expect(k).toEqual([
-        "At", "Ident", "Fn", "Ident", "LParen", "RParen", "Arrow",
-        "At", "Ident", "LParen", "Ident", "RParen", "Ident", "LBrace",
+        "At",
+        "Ident",
+        "Fn",
+        "Ident",
+        "LParen",
+        "RParen",
+        "Arrow",
+        "At",
+        "Ident",
+        "LParen",
+        "Ident",
+        "RParen",
+        "Ident",
+        "LBrace",
       ]);
     });
 
     it("tokenizes a var declaration with template args", () => {
       const { tokens } = tokenize("var<uniform> model: mat4x4<f32>;");
       const v = tokens.map((t) => t.image);
-      expect(v).toEqual([
-        "var", "<", "uniform", ">", "model", ":", "mat4x4", "<", "f32", ">", ";",
-      ]);
+      expect(v).toEqual(["var", "<", "uniform", ">", "model", ":", "mat4x4", "<", "f32", ">", ";"]);
     });
   });
 });

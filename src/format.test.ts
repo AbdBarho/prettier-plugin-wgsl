@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import * as prettier from "prettier";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { fmt as fmtBase, assertIdempotentAtAllWidths } from "./test-helpers.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 function fixture(name: string): string {
@@ -10,27 +10,7 @@ function fixture(name: string): string {
 }
 
 async function fmt(input: string, printWidth: number = 120): Promise<string> {
-  const result = await prettier.format(input, {
-    parser: "wgsl",
-    plugins: [(await import("./index.ts")).default],
-    printWidth,
-    tabWidth: 2,
-  });
-  return result;
-}
-
-async function assertIdempotent(input: string, printWidth: number = 120): Promise<void> {
-  const first = await fmt(input, printWidth);
-  const second = await fmt(first, printWidth);
-  expect(second).toBe(first);
-}
-
-const IDEMPOTENCY_WIDTHS = [40, 80, 120] as const;
-
-async function assertIdempotentAtAllWidths(input: string): Promise<void> {
-  for (const w of IDEMPOTENCY_WIDTHS) {
-    await assertIdempotent(input, w);
-  }
+  return fmtBase(input, printWidth);
 }
 
 describe("end-to-end formatting", () => {
@@ -81,13 +61,6 @@ return color;
     await assertIdempotentAtAllWidths(input);
   });
 
-  it("formats nested expressions correctly", async () => {
-    const input = `const x=(a+b)*(c-d)/e;`;
-    const result = await fmt(input);
-    expect(result).toMatchSnapshot();
-    await assertIdempotentAtAllWidths(input);
-  });
-
   it("formats multiple directives before declarations", async () => {
     const input = `enable f16;diagnostic(off,derivative_uniformity);const X=1;`;
     const result = await fmt(input);
@@ -104,47 +77,13 @@ return color;
     }
   });
 
-  it("formats deeply nested member/index access", async () => {
-    const input = `fn f(){a.b[i].c[j].d=1;}`;
-    const result = await fmt(input);
-    expect(result).toMatchSnapshot();
-    await assertIdempotentAtAllWidths(input);
-  });
-
   it("formats const_assert", async () => {
     const result = await fmt("const_assert true;");
     expect(result).toMatchSnapshot();
   });
 
-  it("handles override with attributes", async () => {
-    const result = await fmt("@id(0) override blockSize:u32=64;");
-    expect(result).toMatchSnapshot();
-  });
-
-  it("formats switch with multiple case selectors", async () => {
-    const input = `fn f(){switch x{case 1,2,3:{break;}default:{break;}}}`;
-    const result = await fmt(input);
-    expect(result).toMatchSnapshot();
-    await assertIdempotentAtAllWidths(input);
-  });
-
-  it("formats empty struct", async () => {
-    const result = await fmt("struct Empty{}");
-    expect(result).toMatchSnapshot();
-  });
-
   it("preserves boolean literals", async () => {
     const result = await fmt("const a=true;const b=false;");
-    expect(result).toMatchSnapshot();
-  });
-
-  it("formats address-of and dereference", async () => {
-    const result = await fmt("fn f(){let p=&v;let x=*p;}");
-    expect(result).toMatchSnapshot();
-  });
-
-  it("formats parenthesized expressions", async () => {
-    const result = await fmt("const x=(a+b);");
     expect(result).toMatchSnapshot();
   });
 
@@ -316,7 +255,6 @@ return f32(x)/f32(0xFFFFFFFF);
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
       await assertIdempotentAtAllWidths(input);
-      await assertIdempotentAtAllWidths(input);
     });
 
     it("formats atomic struct and atomic builtins", async () => {
@@ -371,7 +309,6 @@ fn f(workgroup_id:vec3<u32>,num_workgroups_vec:vec3<u32>){
 let workgroup_index=workgroup_id.x+workgroup_id.y*num_workgroups_vec.x+workgroup_id.z*num_workgroups_vec.x*num_workgroups_vec.y;
 }`;
       await assertIdempotentAtAllWidths(input);
-      await assertIdempotentAtAllWidths(input);
     });
 
     it("collapses multiple blank lines between top-level decls", async () => {
@@ -417,7 +354,6 @@ atomicAdd(&data[flatIdx].r,1u);
 }`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
-      await assertIdempotentAtAllWidths(input);
       await assertIdempotentAtAllWidths(input);
     });
   });

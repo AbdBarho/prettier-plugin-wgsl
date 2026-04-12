@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, assert } from "vitest";
 import { parse } from "./parser.ts";
 
 describe("parser", () => {
@@ -8,6 +8,28 @@ describe("parser", () => {
       expect(ast.kind).toBe("TranslationUnit");
       expect(ast.directives).toEqual([]);
       expect(ast.declarations).toEqual([]);
+    });
+  });
+
+  describe("translation unit location", () => {
+    it("empty file has start 0 end 0", () => {
+      const ast = parse("");
+      expect(ast.start).toBe(0);
+      expect(ast.end).toBe(0);
+    });
+
+    it("directives-only file has correct start and end", () => {
+      const src = "enable f16;";
+      const ast = parse(src);
+      expect(ast.start).toBe(0);
+      expect(ast.end).toBe(src.length);
+    });
+
+    it("declarations-only file has correct start and end", () => {
+      const src = "const x = 1;";
+      const ast = parse(src);
+      expect(ast.start).toBe(0);
+      expect(ast.end).toBe(src.length);
     });
   });
 
@@ -78,9 +100,11 @@ describe("parser", () => {
 
     it("parses hex integer literals in function calls", () => {
       const ast = parse("fn f() { let x = f32(0xFFFFFFFF); }");
-      const body = (ast.declarations[0] as any).body;
-      const callExpr = body.statements[0].initializer;
-      expect(callExpr).toMatchObject({
+      const fn = ast.declarations[0];
+      assert(fn.kind === "FunctionDeclaration");
+      const letDecl = fn.body.statements[0];
+      assert(letDecl.kind === "LetDeclaration");
+      expect(letDecl.initializer).toMatchObject({
         kind: "CallExpr",
         callee: "f32",
         args: [{ kind: "LiteralExpr", value: "0xFFFFFFFF", literalType: "int" }],
@@ -148,30 +172,26 @@ describe("parser", () => {
     it("parses simple attribute", () => {
       const ast = parse("@vertex fn main() {}");
       const fn = ast.declarations[0];
-      expect(fn.kind).toBe("FunctionDeclaration");
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.attributes).toHaveLength(1);
-        expect(fn.attributes[0]).toMatchObject({ name: "vertex", args: [] });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.attributes).toHaveLength(1);
+      expect(fn.attributes[0]).toMatchObject({ name: "vertex", args: [] });
     });
 
     it("parses attribute with args", () => {
       const ast = parse("@workgroup_size(8, 8, 1) fn main() {}");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.attributes[0]).toMatchObject({ name: "workgroup_size" });
-        expect(fn.attributes[0].args).toHaveLength(3);
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.attributes[0]).toMatchObject({ name: "workgroup_size" });
+      expect(fn.attributes[0].args).toHaveLength(3);
     });
 
     it("parses binding attributes on var", () => {
       const ast = parse("@group(0) @binding(1) var<uniform> u: f32;");
       const v = ast.declarations[0];
-      if (v.kind === "VarDeclaration") {
-        expect(v.attributes).toHaveLength(2);
-        expect(v.attributes[0]).toMatchObject({ name: "group" });
-        expect(v.attributes[1]).toMatchObject({ name: "binding" });
-      }
+      assert(v.kind === "VarDeclaration");
+      expect(v.attributes).toHaveLength(2);
+      expect(v.attributes[0]).toMatchObject({ name: "group" });
+      expect(v.attributes[1]).toMatchObject({ name: "binding" });
     });
   });
 
@@ -191,14 +211,13 @@ describe("parser", () => {
         @location(1) color: vec4f,
       }`);
       const s = ast.declarations[0];
-      if (s.kind === "StructDeclaration") {
-        expect(s.members).toHaveLength(2);
-        expect(s.members[0]).toMatchObject({
-          name: "position",
-          type: { name: "vec3f" },
-        });
-        expect(s.members[0].attributes[0]).toMatchObject({ name: "location" });
-      }
+      assert(s.kind === "StructDeclaration");
+      expect(s.members).toHaveLength(2);
+      expect(s.members[0]).toMatchObject({
+        name: "position",
+        type: { name: "vec3f" },
+      });
+      expect(s.members[0].attributes[0]).toMatchObject({ name: "location" });
     });
   });
 
@@ -217,20 +236,18 @@ describe("parser", () => {
     it("parses function with return type", () => {
       const ast = parse("fn add(a: f32, b: f32) -> f32 { return a + b; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.params).toHaveLength(2);
-        expect(fn.returnType).toMatchObject({ name: "f32" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.params).toHaveLength(2);
+      expect(fn.returnType).toMatchObject({ name: "f32" });
     });
 
     it("parses function with return attributes", () => {
       const ast = parse("@vertex fn main() -> @builtin(position) vec4f { return vec4f(0.0); }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.returnAttributes).toHaveLength(1);
-        expect(fn.returnAttributes[0]).toMatchObject({ name: "builtin" });
-        expect(fn.returnType).toMatchObject({ name: "vec4f" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.returnAttributes).toHaveLength(1);
+      expect(fn.returnAttributes[0]).toMatchObject({ name: "builtin" });
+      expect(fn.returnType).toMatchObject({ name: "vec4f" });
     });
   });
 
@@ -238,122 +255,108 @@ describe("parser", () => {
     it("parses identifier expression", () => {
       const ast = parse("const x = y;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({ kind: "IdentExpr", name: "y" });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({ kind: "IdentExpr", name: "y" });
     });
 
     it("parses binary expression", () => {
       const ast = parse("const x = a + b;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "BinaryExpr",
-          op: "+",
-          left: { kind: "IdentExpr", name: "a" },
-          right: { kind: "IdentExpr", name: "b" },
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "BinaryExpr",
+        op: "+",
+        left: { kind: "IdentExpr", name: "a" },
+        right: { kind: "IdentExpr", name: "b" },
+      });
     });
 
     it("respects operator precedence", () => {
       const ast = parse("const x = a + b * c;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        // Should be a + (b * c)
-        expect(decl.initializer).toMatchObject({
-          kind: "BinaryExpr",
-          op: "+",
-          right: { kind: "BinaryExpr", op: "*" },
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      // Should be a + (b * c)
+      expect(decl.initializer).toMatchObject({
+        kind: "BinaryExpr",
+        op: "+",
+        right: { kind: "BinaryExpr", op: "*" },
+      });
     });
 
     it("parses unary expressions", () => {
       const ast = parse("const x = -y;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "UnaryExpr",
-          op: "-",
-          operand: { kind: "IdentExpr", name: "y" },
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "UnaryExpr",
+        op: "-",
+        operand: { kind: "IdentExpr", name: "y" },
+      });
     });
 
     it("parses function calls", () => {
       const ast = parse("const x = min(a, b);");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "CallExpr",
-          callee: "min",
-          args: [
-            { kind: "IdentExpr", name: "a" },
-            { kind: "IdentExpr", name: "b" },
-          ],
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "CallExpr",
+        callee: "min",
+        args: [
+          { kind: "IdentExpr", name: "a" },
+          { kind: "IdentExpr", name: "b" },
+        ],
+      });
     });
 
     it("parses type constructor calls", () => {
       const ast = parse("const v = vec3f(1.0, 2.0, 3.0);");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "CallExpr",
-          callee: "vec3f",
-          args: [
-            { value: "1.0" },
-            { value: "2.0" },
-            { value: "3.0" },
-          ],
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "CallExpr",
+        callee: "vec3f",
+        args: [{ value: "1.0" }, { value: "2.0" }, { value: "3.0" }],
+      });
     });
 
     it("parses member access", () => {
       const ast = parse("const x = v.x;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "MemberExpr",
-          object: { kind: "IdentExpr", name: "v" },
-          member: "x",
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "MemberExpr",
+        object: { kind: "IdentExpr", name: "v" },
+        member: "x",
+      });
     });
 
     it("parses index access", () => {
       const ast = parse("const x = arr[0];");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "IndexExpr",
-          object: { kind: "IdentExpr", name: "arr" },
-          index: { kind: "LiteralExpr", value: "0" },
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "IndexExpr",
+        object: { kind: "IdentExpr", name: "arr" },
+        index: { kind: "LiteralExpr", value: "0" },
+      });
     });
 
     it("parses parenthesized expression", () => {
       const ast = parse("const x = (a + b) * c;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({
-          kind: "BinaryExpr",
-          op: "*",
-          left: { kind: "ParenExpr" },
-        });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({
+        kind: "BinaryExpr",
+        op: "*",
+        left: { kind: "ParenExpr" },
+      });
     });
 
     it("parses address-of and deref", () => {
       const ast = parse("const p = &v;");
       const decl = ast.declarations[0];
-      if (decl.kind === "ConstDeclaration") {
-        expect(decl.initializer).toMatchObject({ kind: "UnaryExpr", op: "&" });
-      }
+      assert(decl.kind === "ConstDeclaration");
+      expect(decl.initializer).toMatchObject({ kind: "UnaryExpr", op: "&" });
     });
   });
 
@@ -361,83 +364,99 @@ describe("parser", () => {
     it("parses return statement", () => {
       const ast = parse("fn f() { return; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "ReturnStmt", value: null });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "ReturnStmt", value: null });
     });
 
     it("parses return with value", () => {
       const ast = parse("fn f() -> f32 { return 1.0; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({
-          kind: "ReturnStmt",
-          value: { kind: "LiteralExpr" },
-        });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({
+        kind: "ReturnStmt",
+        value: { kind: "LiteralExpr" },
+      });
     });
 
     it("parses if/else", () => {
       const ast = parse("fn f() { if x { return; } else { discard; } }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        const ifStmt = fn.body.statements[0];
-        expect(ifStmt).toMatchObject({
-          kind: "IfStmt",
-          condition: { kind: "IdentExpr", name: "x" },
-        });
-        if (ifStmt.kind === "IfStmt") {
-          expect(ifStmt.elseClause).toMatchObject({ kind: "Block" });
-        }
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      const ifStmt = fn.body.statements[0];
+      expect(ifStmt).toMatchObject({
+        kind: "IfStmt",
+        condition: { kind: "IdentExpr", name: "x" },
+      });
+      assert(ifStmt.kind === "IfStmt");
+      expect(ifStmt.elseClause).toMatchObject({ kind: "Block" });
     });
 
     it("parses if/else if/else chain", () => {
       const ast = parse("fn f() { if a {} else if b {} else {} }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        const ifStmt = fn.body.statements[0];
-        if (ifStmt.kind === "IfStmt") {
-          expect(ifStmt.elseClause?.kind).toBe("IfStmt");
-        }
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      const ifStmt = fn.body.statements[0];
+      assert(ifStmt.kind === "IfStmt");
+      expect(ifStmt.elseClause?.kind).toBe("IfStmt");
     });
 
     it("parses for loop", () => {
       const ast = parse("fn f() { for (var i: i32 = 0; i < 10; i++) {} }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        const forStmt = fn.body.statements[0];
-        expect(forStmt).toMatchObject({ kind: "ForStmt" });
-        if (forStmt.kind === "ForStmt") {
-          expect(forStmt.init).toMatchObject({ kind: "VarDeclaration" });
-          expect(forStmt.condition).toMatchObject({ kind: "BinaryExpr", op: "<" });
-          expect(forStmt.update).toMatchObject({ kind: "IncrDecrStmt", op: "++" });
-        }
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      const forStmt = fn.body.statements[0];
+      expect(forStmt).toMatchObject({ kind: "ForStmt" });
+      assert(forStmt.kind === "ForStmt");
+      expect(forStmt.init).toMatchObject({ kind: "VarDeclaration" });
+      expect(forStmt.condition).toMatchObject({ kind: "BinaryExpr", op: "<" });
+      expect(forStmt.update).toMatchObject({ kind: "IncrDecrStmt", op: "++" });
+    });
+
+    it.each([
+      ["var i: i32", "fn f() { for (var i: i32; i < 10; i++) {} }"],
+      ["var i: i32 = 0", "fn f() { for (var i: i32 = 0; i < 10; i++) {} }"],
+      ["var i", "fn f() { for (var i; ;) {} }"],
+      ["let i = 0", "fn f() { for (let i = 0; i < 10; i++) {} }"],
+      ["const n = 10", "fn f() { for (const n = 10; ;) {} }"],
+    ])("for-loop init span is '%s'", (expected, src) => {
+      const fn = parse(src).declarations[0];
+      assert(fn.kind === "FunctionDeclaration");
+      const forStmt = fn.body.statements[0];
+      assert(forStmt.kind === "ForStmt");
+      assert(forStmt.init);
+      expect(src.substring(forStmt.init.start, forStmt.init.end)).toBe(expected);
+    });
+
+    it.each([
+      ["i += 1", "fn f() { for (var i = 0; i < 10; i += 1) {} }"],
+      ["i++", "fn f() { for (var i = 0; i < 10; i++) {} }"],
+      ["foo(x)", "fn f() { for (;; foo(x)) {} }"],
+    ])("for-loop update span is '%s'", (expected, src) => {
+      const fn = parse(src).declarations[0];
+      assert(fn.kind === "FunctionDeclaration");
+      const forStmt = fn.body.statements[0];
+      assert(forStmt.kind === "ForStmt");
+      assert(forStmt.update);
+      expect(src.substring(forStmt.update.start, forStmt.update.end)).toBe(expected);
     });
 
     it("parses while loop", () => {
       const ast = parse("fn f() { while x > 0 { x--; } }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "WhileStmt" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "WhileStmt" });
     });
 
     it("parses loop with continuing and break if", () => {
       const ast = parse("fn f() { loop { x++; continuing { break if x > 10; } } }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        const loopStmt = fn.body.statements[0];
-        expect(loopStmt).toMatchObject({ kind: "LoopStmt" });
-        if (loopStmt.kind === "LoopStmt") {
-          expect(loopStmt.continuing).toMatchObject({
-            kind: "ContinuingStmt",
-            breakIf: { kind: "BinaryExpr", op: ">" },
-          });
-        }
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      const loopStmt = fn.body.statements[0];
+      assert(loopStmt.kind === "LoopStmt");
+      expect(loopStmt.continuing).toMatchObject({
+        kind: "ContinuingStmt",
+        breakIf: { kind: "BinaryExpr", op: ">" },
+      });
     });
 
     it("parses switch statement", () => {
@@ -449,103 +468,91 @@ describe("parser", () => {
         }
       }`);
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        const sw = fn.body.statements[0];
-        expect(sw).toMatchObject({ kind: "SwitchStmt" });
-        if (sw.kind === "SwitchStmt") {
-          expect(sw.clauses).toHaveLength(3);
-          expect(sw.clauses[1].selectors).toHaveLength(2);
-          expect(sw.clauses[2].selectors[0]).toMatchObject({ kind: "DefaultSelector" });
-        }
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      const sw = fn.body.statements[0];
+      assert(sw.kind === "SwitchStmt");
+      expect(sw.clauses).toHaveLength(3);
+      expect(sw.clauses[1].selectors).toHaveLength(2);
+      expect(sw.clauses[2].selectors[0]).toMatchObject({ kind: "DefaultSelector" });
     });
 
     it("parses assignment", () => {
       const ast = parse("fn f() { x = 1; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({
-          kind: "AssignStmt",
-          op: "=",
-          target: { kind: "IdentExpr", name: "x" },
-        });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({
+        kind: "AssignStmt",
+        op: "=",
+        target: { kind: "IdentExpr", name: "x" },
+      });
     });
 
     it("parses compound assignment", () => {
       const ast = parse("fn f() { x += 1; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "AssignStmt", op: "+=" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "AssignStmt", op: "+=" });
     });
 
     it("parses increment/decrement", () => {
       const ast = parse("fn f() { i++; j--; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "IncrDecrStmt", op: "++" });
-        expect(fn.body.statements[1]).toMatchObject({ kind: "IncrDecrStmt", op: "--" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "IncrDecrStmt", op: "++" });
+      expect(fn.body.statements[1]).toMatchObject({ kind: "IncrDecrStmt", op: "--" });
     });
 
     it("parses break and continue", () => {
       const ast = parse("fn f() { break; continue; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "BreakStmt" });
-        expect(fn.body.statements[1]).toMatchObject({ kind: "ContinueStmt" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "BreakStmt" });
+      expect(fn.body.statements[1]).toMatchObject({ kind: "ContinueStmt" });
     });
 
     it("parses discard", () => {
       const ast = parse("fn f() { discard; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "DiscardStmt" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "DiscardStmt" });
     });
 
     it("parses phony assignment", () => {
       const ast = parse("fn f() { _ = compute(); }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "PhonyAssignStmt" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "PhonyAssignStmt" });
     });
 
     it("parses let declaration in function body", () => {
       const ast = parse("fn f() { let x = 42; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({ kind: "LetDeclaration", name: "x" });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({ kind: "LetDeclaration", name: "x" });
     });
 
     it("parses expression statement (function call)", () => {
       const ast = parse("fn f() { doSomething(); }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({
-          kind: "ExprStmt",
-          expr: { kind: "CallExpr", callee: "doSomething" },
-        });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({
+        kind: "ExprStmt",
+        expr: { kind: "CallExpr", callee: "doSomething" },
+      });
     });
 
     it("parses complex LHS assignment", () => {
       const ast = parse("fn f() { a.b[i] += 1; }");
       const fn = ast.declarations[0];
-      if (fn.kind === "FunctionDeclaration") {
-        expect(fn.body.statements[0]).toMatchObject({
-          kind: "AssignStmt",
-          op: "+=",
-          target: {
-            kind: "IndexExpr",
-            object: { kind: "MemberExpr" },
-          },
-        });
-      }
+      assert(fn.kind === "FunctionDeclaration");
+      expect(fn.body.statements[0]).toMatchObject({
+        kind: "AssignStmt",
+        op: "+=",
+        target: {
+          kind: "IndexExpr",
+          object: { kind: "MemberExpr" },
+        },
+      });
     });
   });
 
@@ -566,6 +573,40 @@ describe("parser", () => {
         kind: "BlockComment",
         value: "/* block */",
       });
+    });
+  });
+
+  describe("error handling", () => {
+    it("includes line and column in parse error", () => {
+      expect(() => parse("fn 123() {}")).toThrow(/line 1/i);
+    });
+
+    it("includes correct line for multi-line errors", () => {
+      expect(() => parse("const x = 1;\nconst y =\n  !!;")).toThrow(/line 3/i);
+    });
+
+    it("throws on incomplete var declaration", () => {
+      expect(() => parse("var")).toThrow(/Parse error/);
+    });
+
+    it("throws on missing semicolon", () => {
+      expect(() => parse("const x = 1")).toThrow(/Parse error/);
+    });
+
+    it("throws on unexpected token", () => {
+      expect(() => parse("fn () {}")).toThrow(/Parse error.*line 1/);
+    });
+
+    it("throws on unclosed brace", () => {
+      expect(() => parse("fn f() {")).toThrow(/Parse error/);
+    });
+
+    it("throws on empty expression", () => {
+      expect(() => parse("const x = ;")).toThrow(/Parse error.*line 1/);
+    });
+
+    it("throws on unclosed parenthesis", () => {
+      expect(() => parse("fn f() { foo(; }")).toThrow(/Parse error.*line 1/);
     });
   });
 });

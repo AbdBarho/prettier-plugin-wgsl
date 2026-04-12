@@ -1,28 +1,9 @@
 import { describe, it, expect } from "vitest";
-import * as prettier from "prettier";
+import { getCommentChildNodes } from "./printer.ts";
+import { fmt as fmtBase, assertIdempotentAtAllWidths } from "./test-helpers.ts";
 
 async function fmt(input: string, printWidth: number = 80): Promise<string> {
-  const result = await prettier.format(input, {
-    parser: "wgsl",
-    plugins: [(await import("./index.ts")).default],
-    printWidth,
-    tabWidth: 2,
-  });
-  return result;
-}
-
-async function assertIdempotent(input: string, printWidth: number = 80): Promise<void> {
-  const first = await fmt(input, printWidth);
-  const second = await fmt(first, printWidth);
-  expect(second).toBe(first);
-}
-
-const IDEMPOTENCY_WIDTHS = [40, 80, 120] as const;
-
-async function assertIdempotentAtAllWidths(input: string): Promise<void> {
-  for (const w of IDEMPOTENCY_WIDTHS) {
-    await assertIdempotent(input, w);
-  }
+  return fmtBase(input, printWidth);
 }
 
 describe("printer", () => {
@@ -309,6 +290,21 @@ describe("printer", () => {
       expect(result).toBe("fn f() {\n  if a {\n    x = 1;\n  } else if b {\n    x = 2;\n  } else {\n    x = 3;\n  }\n}\n");
     });
 
+    it("formats for loop with let init and assignment update", async () => {
+      const result = await fmt("fn f(){for(let i=0;i<10;i+=1){}}");
+      expect(result).toBe("fn f() {\n  for (let i = 0; i < 10; i += 1) {}\n}\n");
+    });
+
+    it("formats for loop with const init", async () => {
+      const result = await fmt("fn f(){for(const n=10;;){break;}}");
+      expect(result).toBe("fn f() {\n  for (const n = 10; ; ) {\n    break;\n  }\n}\n");
+    });
+
+    it("formats for loop with expression update", async () => {
+      const result = await fmt("fn f(){for(var i=0;i<10;foo(i)){}}");
+      expect(result).toBe("fn f() {\n  for (var i = 0; i < 10; foo(i)) {}\n}\n");
+    });
+
     it("formats for loop with all empty parts", async () => {
       const result = await fmt("fn f(){for(;;){break;}}");
       expect(result).toBe("fn f() {\n  for (; ; ) {\n    break;\n  }\n}\n");
@@ -467,8 +463,14 @@ const B = 2;
 
     it("wraps long logical chain", async () => {
       const result = await fmt("fn f() { if alpha_condition && bravo_condition && charlie_condition && delta_condition { return; } }", 80);
-      expect(result).toContain("&&");
-      // Should wrap - verify idempotency
+      expect(result).toBe(`fn f() {
+  if
+    alpha_condition && bravo_condition && charlie_condition && delta_condition
+  {
+    return;
+  }
+}
+`);
       await assertIdempotentAtAllWidths(
         "fn f() { if alpha_condition && bravo_condition && charlie_condition && delta_condition { return; } }",
       );
@@ -534,7 +536,11 @@ const B = 2;
 
     it("wraps long assignment RHS", async () => {
       const result = await fmt("fn f() { some_variable = very_long_function_call(argument_one, argument_two, argument_three); }", 80);
-      expect(result).toContain("=\n");
+      expect(result).toBe(`fn f() {
+  some_variable =
+    very_long_function_call(argument_one, argument_two, argument_three);
+}
+`);
       await assertIdempotentAtAllWidths("fn f() { some_variable = very_long_function_call(argument_one, argument_two, argument_three); }");
     });
 
@@ -545,13 +551,19 @@ const B = 2;
 
     it("wraps long const declaration RHS", async () => {
       const result = await fmt("const some_long_constant_name: f32 = very_long_function_call(argument_one, argument_two);", 80);
-      expect(result).toContain("=\n");
+      expect(result).toBe(`const some_long_constant_name: f32 =
+  very_long_function_call(argument_one, argument_two);
+`);
       await assertIdempotentAtAllWidths("const some_long_constant_name: f32 = very_long_function_call(argument_one, argument_two);");
     });
 
     it("wraps long let declaration RHS", async () => {
       const result = await fmt("fn f() { let some_long_variable_name: f32 = very_long_function_call(argument_one, argument_two); }", 80);
-      expect(result).toContain("=\n");
+      expect(result).toBe(`fn f() {
+  let some_long_variable_name: f32 =
+    very_long_function_call(argument_one, argument_two);
+}
+`);
       await assertIdempotentAtAllWidths(
         "fn f() { let some_long_variable_name: f32 = very_long_function_call(argument_one, argument_two); }",
       );
@@ -562,7 +574,15 @@ const B = 2;
         "fn f() -> f32 { return very_long_function_name_here(argument_one_long, argument_two_long, argument_three_long); }",
         80,
       );
-      expect(result).toContain("return\n");
+      expect(result).toBe(`fn f() -> f32 {
+  return
+    very_long_function_name_here(
+      argument_one_long,
+      argument_two_long,
+      argument_three_long,
+    );
+}
+`);
       await assertIdempotentAtAllWidths(
         "fn f() -> f32 { return very_long_function_name_here(argument_one_long, argument_two_long, argument_three_long); }",
       );
@@ -578,7 +598,15 @@ const B = 2;
         "fn f() { _ = very_long_function_name_here(argument_one_long, argument_two_long, argument_three_long); }",
         80,
       );
-      expect(result).toContain("_ =\n");
+      expect(result).toBe(`fn f() {
+  _ =
+    very_long_function_name_here(
+      argument_one_long,
+      argument_two_long,
+      argument_three_long,
+    );
+}
+`);
       await assertIdempotentAtAllWidths(
         "fn f() { _ = very_long_function_name_here(argument_one_long, argument_two_long, argument_three_long); }",
       );
@@ -594,7 +622,12 @@ const B = 2;
     it("wraps long if condition", async () => {
       const input = "fn f() { if some_very_long_condition_variable && another_very_long_condition_variable { return; } }";
       const result = await fmt(input, 80);
-      // Condition should wrap with indent
+      expect(result).toBe(`fn f() {
+  if some_very_long_condition_variable && another_very_long_condition_variable {
+    return;
+  }
+}
+`);
       await assertIdempotentAtAllWidths(input);
     });
 
@@ -606,6 +639,14 @@ const B = 2;
     it("wraps long for header", async () => {
       const input = "fn f() { for (var some_index: i32 = 0; some_index < some_very_long_limit; some_index++) {} }";
       const result = await fmt(input, 80);
+      expect(result).toBe(`fn f() {
+  for (
+    var some_index: i32 = 0;
+    some_index < some_very_long_limit;
+    some_index++
+  ) {}
+}
+`);
       await assertIdempotentAtAllWidths(input);
     });
   });
@@ -892,6 +933,53 @@ fn main() -> @builtin(position) vec4f {
           return result;
         }
       `);
+    });
+  });
+
+  describe("getCommentChildNodes", () => {
+    it("returns empty for non-object input", () => {
+      expect(getCommentChildNodes(null as never)).toEqual([]);
+      expect(getCommentChildNodes(undefined as never)).toEqual([]);
+    });
+
+    it("returns empty for leaf nodes", () => {
+      expect(getCommentChildNodes({ kind: "IdentExpr", name: "x", start: 0, end: 1 })).toEqual([]);
+      expect(getCommentChildNodes({ kind: "LiteralExpr", value: "42", literalType: "int", start: 0, end: 2 })).toEqual([]);
+      expect(getCommentChildNodes({ kind: "BreakStmt", start: 0, end: 6 })).toEqual([]);
+      expect(getCommentChildNodes({ kind: "ContinueStmt", start: 0, end: 9 })).toEqual([]);
+      expect(getCommentChildNodes({ kind: "DiscardStmt", start: 0, end: 8 })).toEqual([]);
+    });
+
+    it("returns children for ReturnStmt with value", () => {
+      const value = { kind: "IdentExpr" as const, name: "x", start: 7, end: 8 };
+      const node = { kind: "ReturnStmt" as const, value, start: 0, end: 9 };
+      expect(getCommentChildNodes(node)).toEqual([value]);
+    });
+
+    it("returns empty for ReturnStmt without value", () => {
+      const node = { kind: "ReturnStmt" as const, value: null, start: 0, end: 7 };
+      expect(getCommentChildNodes(node)).toEqual([]);
+    });
+
+    it("returns children for BinaryExpr", () => {
+      const left = { kind: "IdentExpr" as const, name: "a", start: 0, end: 1 };
+      const right = { kind: "IdentExpr" as const, name: "b", start: 4, end: 5 };
+      const node = { kind: "BinaryExpr" as const, left, op: "+", right, start: 0, end: 5 };
+      expect(getCommentChildNodes(node)).toEqual([left, right]);
+    });
+
+    it("returns children for IfStmt with else clause", () => {
+      const condition = { kind: "IdentExpr" as const, name: "x", start: 3, end: 4 };
+      const body = { kind: "Block" as const, statements: [], start: 5, end: 7 };
+      const elseClause = { kind: "Block" as const, statements: [], start: 13, end: 15 };
+      const node = { kind: "IfStmt" as const, condition, body, elseClause, start: 0, end: 15 };
+      expect(getCommentChildNodes(node)).toEqual([condition, body, elseClause]);
+    });
+
+    it("returns children for ForStmt with missing parts", () => {
+      const body = { kind: "Block" as const, statements: [], start: 10, end: 12 };
+      const node = { kind: "ForStmt" as const, init: null, condition: null, update: null, body, start: 0, end: 12 };
+      expect(getCommentChildNodes(node)).toEqual([body]);
     });
   });
 });

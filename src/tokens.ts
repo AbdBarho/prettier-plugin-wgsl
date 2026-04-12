@@ -2,10 +2,7 @@ import { createToken, Lexer } from "chevrotain";
 import type { TokenType, IToken, CustomPatternMatcherFunc } from "chevrotain";
 
 // ─── Custom pattern for nested block comments ────────────────
-const matchNestedBlockComment: CustomPatternMatcherFunc = (
-  text: string,
-  startOffset: number,
-): ReturnType<CustomPatternMatcherFunc> => {
+const matchNestedBlockComment: CustomPatternMatcherFunc = (text: string, startOffset: number): ReturnType<CustomPatternMatcherFunc> => {
   if (text[startOffset] !== "/" || text[startOffset + 1] !== "*") return null;
   let pos = startOffset + 2;
   let depth = 1;
@@ -92,8 +89,7 @@ export const HexFloatLiteral = createToken({
 
 export const DecFloatLiteral = createToken({
   name: "DecFloatLiteral",
-  pattern:
-    /[0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+[eE][+-]?[0-9]+[fh]?|[0-9]+[fh]/,
+  pattern: /[0-9]*\.[0-9]+(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+\.[0-9]*(?:[eE][+-]?[0-9]+)?[fh]?|[0-9]+[eE][+-]?[0-9]+[fh]?|[0-9]+[fh]/,
   categories: [FloatLiteral],
 });
 

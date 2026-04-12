@@ -10,9 +10,7 @@ function kindsAfterDisambig(source: string): string[] {
 describe("template disambiguator", () => {
   it("converts vec3<f32> angle brackets to template delimiters", () => {
     const kinds = kindsAfterDisambig("vec3<f32>");
-    expect(kinds).toEqual([
-      "Ident", "TemplateArgsOpen", "Ident", "TemplateArgsClose",
-    ]);
+    expect(kinds).toEqual(["Ident", "TemplateArgsOpen", "Ident", "TemplateArgsClose"]);
   });
 
   it("leaves comparison operators unchanged", () => {
@@ -24,8 +22,15 @@ describe("template disambiguator", () => {
   it("handles nested templates: array<vec3<f32>, 4>", () => {
     const kinds = kindsAfterDisambig("array<vec3<f32>, 4>");
     expect(kinds).toEqual([
-      "Ident", "TemplateArgsOpen", "Ident", "TemplateArgsOpen", "Ident",
-      "TemplateArgsClose", "Comma", "DecIntLiteral", "TemplateArgsClose",
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsClose",
+      "Comma",
+      "DecIntLiteral",
+      "TemplateArgsClose",
     ]);
   });
 
@@ -43,9 +48,7 @@ describe("template disambiguator", () => {
 
   it("handles var<uniform>", () => {
     const kinds = kindsAfterDisambig("var<uniform>");
-    expect(kinds).toEqual([
-      "Var", "TemplateArgsOpen", "Ident", "TemplateArgsClose",
-    ]);
+    expect(kinds).toEqual(["Var", "TemplateArgsOpen", "Ident", "TemplateArgsClose"]);
   });
 
   it("handles mat4x4<f32> after colon", () => {

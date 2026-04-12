@@ -3,23 +3,66 @@ import type { IToken } from "chevrotain";
 import { tokenize, TK, allTokens } from "./tokens.ts";
 import { disambiguateTemplates } from "./template-disambiguator.ts";
 import type {
-  TranslationUnit, EnableDirective, RequiresDirective, DiagnosticDirective,
-  FunctionDeclaration, StructDeclaration, StructMember, Parameter, Attribute,
-  VarDeclaration, LetDeclaration, ConstDeclaration, OverrideDeclaration,
-  AliasDeclaration, ConstAssertStatement,
-  Block, ReturnStmt, IfStmt, ForStmt, WhileStmt, LoopStmt, ContinuingStmt,
-  SwitchStmt, CaseClause, DefaultSelector,
-  AssignStmt, IncrDecrStmt, ExprStmt, BreakStmt, ContinueStmt, DiscardStmt,
+  TranslationUnit,
+  EnableDirective,
+  RequiresDirective,
+  DiagnosticDirective,
+  FunctionDeclaration,
+  StructDeclaration,
+  StructMember,
+  Parameter,
+  Attribute,
+  VarDeclaration,
+  LetDeclaration,
+  ConstDeclaration,
+  OverrideDeclaration,
+  AliasDeclaration,
+  ConstAssertStatement,
+  Block,
+  ReturnStmt,
+  IfStmt,
+  ForStmt,
+  WhileStmt,
+  LoopStmt,
+  ContinuingStmt,
+  SwitchStmt,
+  CaseClause,
+  DefaultSelector,
+  AssignStmt,
+  IncrDecrStmt,
+  ExprStmt,
+  BreakStmt,
+  ContinueStmt,
+  DiscardStmt,
   PhonyAssignStmt,
-  BinaryExpr, UnaryExpr, CallExpr, MemberExpr, IndexExpr,
-  IdentExpr, LiteralExpr, ParenExpr,
-  TypeExpr, Expr, Stmt, CommentNode,
+  BinaryExpr,
+  UnaryExpr,
+  CallExpr,
+  MemberExpr,
+  IndexExpr,
+  IdentExpr,
+  LiteralExpr,
+  ParenExpr,
+  TypeExpr,
+  Expr,
+  Stmt,
+  CommentNode,
 } from "./ast.ts";
 
 // Helper: get end offset from token
 function tEnd(t: IToken): number {
   return t.startOffset + t.image.length;
 }
+
+// During Chevrotain's grammar recording phase, ACTION() returns undefined.
+// This sentinel is used as a fallback during recording; it should never
+// appear in an actual parse result.
+const RECORDING_PHASE_SENTINEL = Object.freeze({
+  kind: "ExprStmt" as const,
+  expr: { kind: "IdentExpr" as const, name: "", start: -1, end: -1 },
+  start: -1,
+  end: -1,
+}) as Stmt;
 
 class WGSLParser extends EmbeddedActionsParser {
   constructor() {
@@ -35,9 +78,21 @@ class WGSLParser extends EmbeddedActionsParser {
 
     this.MANY(() => {
       this.OR([
-        { ALT: () => { directives.push(this.SUBRULE(this.enableDirective)); } },
-        { ALT: () => { directives.push(this.SUBRULE(this.requiresDirective)); } },
-        { ALT: () => { directives.push(this.SUBRULE(this.diagnosticDirective)); } },
+        {
+          ALT: () => {
+            directives.push(this.SUBRULE(this.enableDirective));
+          },
+        },
+        {
+          ALT: () => {
+            directives.push(this.SUBRULE(this.requiresDirective));
+          },
+        },
+        {
+          ALT: () => {
+            directives.push(this.SUBRULE(this.diagnosticDirective));
+          },
+        },
       ]);
     });
 
@@ -45,10 +100,9 @@ class WGSLParser extends EmbeddedActionsParser {
       declarations.push(this.SUBRULE(this.declaration));
     });
 
-    const start = directives.length > 0 ? directives[0].start
-      : declarations.length > 0 ? declarations[0].start : 0;
-    const end = declarations.length > 0 ? declarations[declarations.length - 1].end
-      : directives.length > 0 ? directives[directives.length - 1].end : 0;
+    const allNodes = [...directives, ...declarations];
+    const start = allNodes[0]?.start ?? 0;
+    const end = allNodes.at(-1)?.end ?? 0;
 
     return { kind: "TranslationUnit", directives, declarations, start, end };
   });
@@ -134,8 +188,7 @@ class WGSLParser extends EmbeddedActionsParser {
       this.CONSUME(TK.RParen);
     });
     // Re-compute end from last consumed token
-    const end = args.length > 0 || this.LA(0).image === ")"
-      ? tEnd(this.LA(0)) : at.startOffset + 1 + name.length;
+    const end = args.length > 0 || this.LA(0).image === ")" ? tEnd(this.LA(0)) : at.startOffset + 1 + name.length;
     return { kind: "Attribute", name, args, start: at.startOffset, end };
   });
 
@@ -167,8 +220,15 @@ class WGSLParser extends EmbeddedActionsParser {
 
     const body = this.SUBRULE(this.block);
     return {
-      kind: "FunctionDeclaration", attributes: attrs, name, params,
-      returnType, returnAttributes, body, start, end: body.end,
+      kind: "FunctionDeclaration",
+      attributes: attrs,
+      name,
+      params,
+      returnType,
+      returnAttributes,
+      body,
+      start,
+      end: body.end,
     };
   });
 
@@ -203,10 +263,14 @@ class WGSLParser extends EmbeddedActionsParser {
     const members: StructMember[] = [];
     this.MANY(() => {
       members.push(this.SUBRULE(this.structMember));
-      this.OPTION(() => { this.CONSUME(TK.Comma); });
+      this.OPTION(() => {
+        this.CONSUME(TK.Comma);
+      });
     });
     const rb = this.CONSUME(TK.RBrace);
-    this.OPTION2(() => { this.CONSUME(TK.Semicolon); });  // optional trailing ;
+    this.OPTION2(() => {
+      this.CONSUME(TK.Semicolon);
+    }); // optional trailing ;
     return { kind: "StructDeclaration", name, members, start: kw.startOffset, end: tEnd(rb) };
   });
 
@@ -219,61 +283,134 @@ class WGSLParser extends EmbeddedActionsParser {
     return { kind: "StructMember", attributes: attrs, name: nameToken.image, type, start, end: type.end };
   });
 
+  // ─── Shared declaration cores (called via SUBRULE from wrappers) ───
+
+  private varDeclCore = this.RULE(
+    "varDeclCore",
+    (): {
+      qualifier: string | null;
+      name: string;
+      nameToken: IToken;
+      type: TypeExpr | null;
+      initializer: Expr | null;
+    } => {
+      let qualifier: string | null = null;
+      this.OPTION(() => {
+        this.CONSUME(TK.TemplateArgsOpen);
+        qualifier = this.CONSUME(TK.Ident).image;
+        this.OPTION2(() => {
+          this.CONSUME(TK.Comma);
+          qualifier += ", " + this.CONSUME2(TK.Ident).image;
+        });
+        this.CONSUME(TK.TemplateArgsClose);
+      });
+      const nameToken = this.CONSUME3(TK.Ident);
+      let type: TypeExpr | null = null;
+      this.OPTION3(() => {
+        this.CONSUME(TK.Colon);
+        type = this.SUBRULE(this.typeExpr);
+      });
+      let initializer: Expr | null = null;
+      this.OPTION4(() => {
+        this.CONSUME(TK.Equal);
+        initializer = this.SUBRULE(this.expression);
+      });
+      return { qualifier, name: nameToken.image, nameToken, type, initializer };
+    },
+  );
+
+  private letDeclCore = this.RULE(
+    "letDeclCore",
+    (): {
+      name: string;
+      type: TypeExpr | null;
+      initializer: Expr;
+    } => {
+      const name = this.CONSUME(TK.Ident).image;
+      let type: TypeExpr | null = null;
+      this.OPTION(() => {
+        this.CONSUME(TK.Colon);
+        type = this.SUBRULE(this.typeExpr);
+      });
+      this.CONSUME(TK.Equal);
+      const initializer = this.SUBRULE(this.expression);
+      return { name, type, initializer };
+    },
+  );
+
+  private constDeclCore = this.RULE(
+    "constDeclCore",
+    (): {
+      name: string;
+      type: TypeExpr | null;
+      initializer: Expr;
+    } => {
+      const name = this.CONSUME(TK.Ident).image;
+      let type: TypeExpr | null = null;
+      this.OPTION(() => {
+        this.CONSUME(TK.Colon);
+        type = this.SUBRULE(this.typeExpr);
+      });
+      this.CONSUME(TK.Equal);
+      const initializer = this.SUBRULE(this.expression);
+      return { name, type, initializer };
+    },
+  );
+
+  // ─── Declaration wrappers (with semicolon) ───
+
   private varDeclaration = this.RULE("varDeclaration", (attrs?: Attribute[]): VarDeclaration => {
     attrs = attrs ?? [];
     const kw = this.CONSUME(TK.Var);
-    const start = attrs.length > 0 ? attrs[0].start : kw.startOffset;
-    let qualifier: string | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.TemplateArgsOpen);
-      qualifier = this.CONSUME(TK.Ident).image;
-      this.OPTION2(() => {
-        this.CONSUME(TK.Comma);
-        qualifier += ", " + this.CONSUME2(TK.Ident).image;
-      });
-      this.CONSUME(TK.TemplateArgsClose);
-    });
-    const name = this.CONSUME3(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION3(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    let initializer: Expr | null = null;
-    this.OPTION4(() => {
-      this.CONSUME(TK.Equal);
-      initializer = this.SUBRULE(this.expression);
-    });
+    const core = this.SUBRULE(this.varDeclCore);
     const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "VarDeclaration", attributes: attrs, qualifier, name, type, initializer, start, end: tEnd(semi) };
+    return (
+      this.ACTION(() => {
+        const start = attrs!.length > 0 ? attrs![0].start : kw.startOffset;
+        return {
+          kind: "VarDeclaration" as const,
+          attributes: attrs!,
+          qualifier: core.qualifier,
+          name: core.name,
+          type: core.type,
+          initializer: core.initializer,
+          start,
+          end: tEnd(semi),
+        };
+      }) ?? (RECORDING_PHASE_SENTINEL as unknown as VarDeclaration)
+    );
   });
 
   private letDeclaration = this.RULE("letDeclaration", (): LetDeclaration => {
     const kw = this.CONSUME(TK.Let);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
+    const core = this.SUBRULE(this.letDeclCore);
     const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "LetDeclaration", name, type, initializer, start: kw.startOffset, end: tEnd(semi) };
+    return (
+      this.ACTION(() => ({
+        kind: "LetDeclaration" as const,
+        name: core.name,
+        type: core.type,
+        initializer: core.initializer,
+        start: kw.startOffset,
+        end: tEnd(semi),
+      })) ?? (RECORDING_PHASE_SENTINEL as unknown as LetDeclaration)
+    );
   });
 
   private constDeclaration = this.RULE("constDeclaration", (): ConstDeclaration => {
     const kw = this.CONSUME(TK.Const);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
+    const core = this.SUBRULE(this.constDeclCore);
     const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "ConstDeclaration", name, type, initializer, start: kw.startOffset, end: tEnd(semi) };
+    return (
+      this.ACTION(() => ({
+        kind: "ConstDeclaration" as const,
+        name: core.name,
+        type: core.type,
+        initializer: core.initializer,
+        start: kw.startOffset,
+        end: tEnd(semi),
+      })) ?? (RECORDING_PHASE_SENTINEL as unknown as ConstDeclaration)
+    );
   });
 
   private overrideDeclaration = this.RULE("overrideDeclaration", (attrs?: Attribute[]): OverrideDeclaration => {
@@ -329,9 +466,10 @@ class WGSLParser extends EmbeddedActionsParser {
       });
       this.CONSUME(TK.TemplateArgsClose);
     });
-    const end = templateArgs.length > 0
-      ? tEnd(this.LA(0)) // end of TemplateArgsClose
-      : tEnd(nameToken);
+    const end =
+      templateArgs.length > 0
+        ? tEnd(this.LA(0)) // end of TemplateArgsClose
+        : tEnd(nameToken);
     return { kind: "TypeExpr", name: nameToken.image, templateArgs, start: nameToken.startOffset, end };
   });
 
@@ -342,10 +480,9 @@ class WGSLParser extends EmbeddedActionsParser {
         GATE: () => {
           const la1 = this.LA(1);
           const la2 = this.LA(2);
-          return la1.tokenType === TK.Ident && (
-            la2.tokenType === TK.TemplateArgsOpen ||
-            la2.tokenType === TK.Comma ||
-            la2.tokenType === TK.TemplateArgsClose
+          return (
+            la1.tokenType === TK.Ident &&
+            (la2.tokenType === TK.TemplateArgsOpen || la2.tokenType === TK.Comma || la2.tokenType === TK.TemplateArgsClose)
           );
         },
         ALT: () => this.SUBRULE(this.typeExpr),
@@ -378,9 +515,9 @@ class WGSLParser extends EmbeddedActionsParser {
       { ALT: () => this.SUBRULE(this.continueStmt) },
       { ALT: () => this.SUBRULE(this.discardStmt) },
       { ALT: () => this.SUBRULE(this.block) },
-      { ALT: () => this.SUBRULE(this.varStmtDecl) },
-      { ALT: () => this.SUBRULE(this.letStmtDecl) },
-      { ALT: () => this.SUBRULE(this.constStmtDecl) },
+      { ALT: () => this.SUBRULE(this.varDeclaration) },
+      { ALT: () => this.SUBRULE2(this.letDeclaration) },
+      { ALT: () => this.SUBRULE2(this.constDeclaration) },
       { ALT: () => this.SUBRULE(this.constAssertStmt) },
       { ALT: () => this.SUBRULE(this.phonyAssignment) },
       { ALT: () => this.SUBRULE(this.exprOrAssignStmt) },
@@ -404,10 +541,7 @@ class WGSLParser extends EmbeddedActionsParser {
     let elseClause: IfStmt | Block | null = null;
     this.OPTION(() => {
       this.CONSUME(TK.Else);
-      elseClause = this.OR([
-        { ALT: () => this.SUBRULE(this.ifStmt) },
-        { ALT: () => this.SUBRULE2(this.block) },
-      ]);
+      elseClause = this.OR([{ ALT: () => this.SUBRULE(this.ifStmt) }, { ALT: () => this.SUBRULE2(this.block) }]);
     });
     const ec = elseClause as IfStmt | Block | null;
     const end = ec ? ec.end : body.end;
@@ -451,57 +585,52 @@ class WGSLParser extends EmbeddedActionsParser {
 
   private varDeclNoSemicolon = this.RULE("varDeclNoSemicolon", (): VarDeclaration => {
     const kw = this.CONSUME(TK.Var);
-    let qualifier: string | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.TemplateArgsOpen);
-      qualifier = this.CONSUME(TK.Ident).image;
-      this.OPTION2(() => {
-        this.CONSUME(TK.Comma);
-        qualifier += ", " + this.CONSUME2(TK.Ident).image;
-      });
-      this.CONSUME(TK.TemplateArgsClose);
-    });
-    const name = this.CONSUME3(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION3(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    let initializer: Expr | null = null;
-    this.OPTION4(() => {
-      this.CONSUME(TK.Equal);
-      initializer = this.SUBRULE(this.expression);
-    });
-    const ini = initializer as Expr | null;
-    const ty = type as TypeExpr | null;
-    const end = ini ? ini.end : ty ? ty.end : kw.startOffset + name.length;
-    return { kind: "VarDeclaration", attributes: [], qualifier, name, type, initializer, start: kw.startOffset, end };
+    const core = this.SUBRULE(this.varDeclCore);
+    return (
+      this.ACTION(() => {
+        const end = core.initializer ? core.initializer.end : core.type ? core.type.end : tEnd(core.nameToken);
+        return {
+          kind: "VarDeclaration" as const,
+          attributes: [] as Attribute[],
+          qualifier: core.qualifier,
+          name: core.name,
+          type: core.type,
+          initializer: core.initializer,
+          start: kw.startOffset,
+          end,
+        };
+      }) ?? (RECORDING_PHASE_SENTINEL as unknown as VarDeclaration)
+    );
   });
 
   private letDeclNoSemicolon = this.RULE("letDeclNoSemicolon", (): LetDeclaration => {
     const kw = this.CONSUME(TK.Let);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
-    return { kind: "LetDeclaration", name, type, initializer, start: kw.startOffset, end: initializer.end };
+    const core = this.SUBRULE(this.letDeclCore);
+    return (
+      this.ACTION(() => ({
+        kind: "LetDeclaration" as const,
+        name: core.name,
+        type: core.type,
+        initializer: core.initializer,
+        start: kw.startOffset,
+        end: core.initializer.end,
+      })) ?? (RECORDING_PHASE_SENTINEL as unknown as LetDeclaration)
+    );
   });
 
   private constDeclNoSemicolon = this.RULE("constDeclNoSemicolon", (): ConstDeclaration => {
     const kw = this.CONSUME(TK.Const);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
-    return { kind: "ConstDeclaration", name, type, initializer, start: kw.startOffset, end: initializer.end };
+    const core = this.SUBRULE(this.constDeclCore);
+    return (
+      this.ACTION(() => ({
+        kind: "ConstDeclaration" as const,
+        name: core.name,
+        type: core.type,
+        initializer: core.initializer,
+        start: kw.startOffset,
+        end: core.initializer.end,
+      })) ?? (RECORDING_PHASE_SENTINEL as unknown as ConstDeclaration)
+    );
   });
 
   private whileStmt = this.RULE("whileStmt", (): WhileStmt => {
@@ -520,9 +649,15 @@ class WGSLParser extends EmbeddedActionsParser {
       this.OR([
         {
           GATE: () => this.LA(1).tokenType === TK.Continuing,
-          ALT: () => { continuing = this.SUBRULE(this.continuingStmt); },
+          ALT: () => {
+            continuing = this.SUBRULE(this.continuingStmt);
+          },
         },
-        { ALT: () => { statements.push(this.SUBRULE(this.statement)); } },
+        {
+          ALT: () => {
+            statements.push(this.SUBRULE(this.statement));
+          },
+        },
       ]);
     });
     const rb = this.CONSUME(TK.RBrace);
@@ -547,7 +682,11 @@ class WGSLParser extends EmbeddedActionsParser {
             this.CONSUME(TK.Semicolon);
           },
         },
-        { ALT: () => { statements.push(this.SUBRULE(this.statement)); } },
+        {
+          ALT: () => {
+            statements.push(this.SUBRULE(this.statement));
+          },
+        },
       ]);
     });
     const rb = this.CONSUME(TK.RBrace);
@@ -595,7 +734,9 @@ class WGSLParser extends EmbeddedActionsParser {
       },
     ]);
 
-    this.OPTION2(() => { this.CONSUME(TK.Colon); });
+    this.OPTION2(() => {
+      this.CONSUME(TK.Colon);
+    });
     const body = this.SUBRULE(this.block);
     return { kind: "CaseClause", selectors, body, start, end: body.end };
   });
@@ -638,62 +779,6 @@ class WGSLParser extends EmbeddedActionsParser {
     return { kind: "PhonyAssignStmt", value, start: us.startOffset, end: tEnd(semi) };
   });
 
-  // Local var/let/const in statement context (with semicolons)
-  private varStmtDecl = this.RULE("varStmtDecl", (): VarDeclaration => {
-    const kw = this.CONSUME(TK.Var);
-    let qualifier: string | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.TemplateArgsOpen);
-      qualifier = this.CONSUME(TK.Ident).image;
-      this.OPTION2(() => {
-        this.CONSUME(TK.Comma);
-        qualifier += ", " + this.CONSUME2(TK.Ident).image;
-      });
-      this.CONSUME(TK.TemplateArgsClose);
-    });
-    const name = this.CONSUME3(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION3(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    let initializer: Expr | null = null;
-    this.OPTION4(() => {
-      this.CONSUME(TK.Equal);
-      initializer = this.SUBRULE(this.expression);
-    });
-    const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "VarDeclaration", attributes: [], qualifier, name, type, initializer, start: kw.startOffset, end: tEnd(semi) };
-  });
-
-  private letStmtDecl = this.RULE("letStmtDecl", (): LetDeclaration => {
-    const kw = this.CONSUME(TK.Let);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
-    const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "LetDeclaration", name, type, initializer, start: kw.startOffset, end: tEnd(semi) };
-  });
-
-  private constStmtDecl = this.RULE("constStmtDecl", (): ConstDeclaration => {
-    const kw = this.CONSUME(TK.Const);
-    const name = this.CONSUME(TK.Ident).image;
-    let type: TypeExpr | null = null;
-    this.OPTION(() => {
-      this.CONSUME(TK.Colon);
-      type = this.SUBRULE(this.typeExpr);
-    });
-    this.CONSUME(TK.Equal);
-    const initializer = this.SUBRULE(this.expression);
-    const semi = this.CONSUME(TK.Semicolon);
-    return { kind: "ConstDeclaration", name, type, initializer, start: kw.startOffset, end: tEnd(semi) };
-  });
-
   private constAssertStmt = this.RULE("constAssertStmt", (): ConstAssertStatement => {
     const kw = this.CONSUME(TK.ConstAssert);
     const expr = this.SUBRULE(this.expression);
@@ -704,9 +789,11 @@ class WGSLParser extends EmbeddedActionsParser {
   private exprOrAssignStmt = this.RULE("exprOrAssignStmt", (): Stmt => {
     const stmt = this.SUBRULE(this.exprOrAssignStmtNoSemicolon);
     const semi = this.CONSUME(TK.Semicolon);
-    return this.ACTION(() => {
-      return { ...stmt, end: tEnd(semi) };
-    }) ?? stmt;
+    return (
+      this.ACTION(() => {
+        return { ...stmt, end: tEnd(semi) };
+      }) ?? stmt
+    );
   });
 
   private assignOp = this.RULE("assignOp", (): IToken => {
@@ -733,31 +820,54 @@ class WGSLParser extends EmbeddedActionsParser {
         ALT: () => {
           const op = this.SUBRULE(this.assignOp);
           const val = this.SUBRULE2(this.expression);
-          return this.ACTION(() => ({
-            kind: "AssignStmt" as const, target: expr, op: op.image, value: val, start: expr.start, end: val.end,
-          })) ?? { kind: "AssignStmt" as const, target: expr, op: "=", value: val, start: 0, end: 0 };
+          return (
+            this.ACTION(() => ({
+              kind: "AssignStmt" as const,
+              target: expr,
+              op: op.image,
+              value: val,
+              start: expr.start,
+              end: val.end,
+            })) ?? RECORDING_PHASE_SENTINEL
+          );
         },
       },
       {
         ALT: () => {
           const op = this.CONSUME(TK.PlusPlus);
-          return this.ACTION(() => ({
-            kind: "IncrDecrStmt" as const, target: expr, op: "++" as const, start: expr.start, end: tEnd(op),
-          })) ?? { kind: "IncrDecrStmt" as const, target: expr, op: "++" as const, start: 0, end: 0 };
+          return (
+            this.ACTION(() => ({
+              kind: "IncrDecrStmt" as const,
+              target: expr,
+              op: "++" as const,
+              start: expr.start,
+              end: tEnd(op),
+            })) ?? RECORDING_PHASE_SENTINEL
+          );
         },
       },
       {
         ALT: () => {
           const op = this.CONSUME(TK.MinusMinus);
-          return this.ACTION(() => ({
-            kind: "IncrDecrStmt" as const, target: expr, op: "--" as const, start: expr.start, end: tEnd(op),
-          })) ?? { kind: "IncrDecrStmt" as const, target: expr, op: "--" as const, start: 0, end: 0 };
+          return (
+            this.ACTION(() => ({
+              kind: "IncrDecrStmt" as const,
+              target: expr,
+              op: "--" as const,
+              start: expr.start,
+              end: tEnd(op),
+            })) ?? RECORDING_PHASE_SENTINEL
+          );
         },
       },
       {
-        ALT: () => this.ACTION(() => ({
-          kind: "ExprStmt" as const, expr, start: expr.start, end: expr.end,
-        })) ?? { kind: "ExprStmt" as const, expr, start: 0, end: 0 },
+        ALT: () =>
+          this.ACTION(() => ({
+            kind: "ExprStmt" as const,
+            expr,
+            start: expr.start,
+            end: expr.end,
+          })) ?? RECORDING_PHASE_SENTINEL,
       },
     ]);
   });
@@ -821,10 +931,7 @@ class WGSLParser extends EmbeddedActionsParser {
   private equalityExpr = this.RULE("equalityExpr", (): Expr => {
     let left = this.SUBRULE(this.relationalExpr);
     this.MANY(() => {
-      const op = this.OR([
-        { ALT: () => this.CONSUME(TK.EqualEqual) },
-        { ALT: () => this.CONSUME(TK.BangEqual) },
-      ]);
+      const op = this.OR([{ ALT: () => this.CONSUME(TK.EqualEqual) }, { ALT: () => this.CONSUME(TK.BangEqual) }]);
       const right = this.SUBRULE2(this.relationalExpr);
       left = { kind: "BinaryExpr", op: op.image, left, right, start: left.start, end: right.end };
     });
@@ -849,10 +956,7 @@ class WGSLParser extends EmbeddedActionsParser {
   private shiftExpr = this.RULE("shiftExpr", (): Expr => {
     let left = this.SUBRULE(this.additiveExpr);
     this.MANY(() => {
-      const op = this.OR([
-        { ALT: () => this.CONSUME(TK.ShiftLeft) },
-        { ALT: () => this.CONSUME(TK.ShiftRight) },
-      ]);
+      const op = this.OR([{ ALT: () => this.CONSUME(TK.ShiftLeft) }, { ALT: () => this.CONSUME(TK.ShiftRight) }]);
       const right = this.SUBRULE2(this.additiveExpr);
       left = { kind: "BinaryExpr", op: op.image, left, right, start: left.start, end: right.end };
     });
@@ -862,10 +966,7 @@ class WGSLParser extends EmbeddedActionsParser {
   private additiveExpr = this.RULE("additiveExpr", (): Expr => {
     let left = this.SUBRULE(this.multiplicativeExpr);
     this.MANY(() => {
-      const op = this.OR([
-        { ALT: () => this.CONSUME(TK.Plus) },
-        { ALT: () => this.CONSUME(TK.Minus) },
-      ]);
+      const op = this.OR([{ ALT: () => this.CONSUME(TK.Plus) }, { ALT: () => this.CONSUME(TK.Minus) }]);
       const right = this.SUBRULE2(this.multiplicativeExpr);
       left = { kind: "BinaryExpr", op: op.image, left, right, start: left.start, end: right.end };
     });
@@ -1026,13 +1127,15 @@ export function parse(source: string): TranslationUnit {
 
   if (parserInstance.errors.length > 0) {
     const err = parserInstance.errors[0];
-    throw new Error(err.message);
+    const loc =
+      err.token.startLine != null && !isNaN(err.token.startLine) ? ` at line ${err.token.startLine}, column ${err.token.startColumn}` : "";
+    throw new Error(`Parse error${loc}: ${err.message}`);
   }
 
   // Attach comments both as leadingComments (for legacy printer) and as
   // a `comments` array on the root node (for Prettier's comment handling API)
   const commentNodes: CommentNode[] = comments.map((c) => ({
-    kind: c.tokenType.name === "LineComment" ? "LineComment" as const : "BlockComment" as const,
+    kind: c.tokenType.name === "LineComment" ? ("LineComment" as const) : ("BlockComment" as const),
     value: c.image,
     start: c.startOffset,
     end: c.startOffset + c.image.length,
