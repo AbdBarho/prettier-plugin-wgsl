@@ -28,10 +28,12 @@ function retype(token: IToken, newType: TokenType, image: string): IToken {
  */
 export function disambiguateTemplates(tokens: IToken[]): IToken[] {
   let result: IToken[] | null = null; // lazily copied on first template candidate
-  const len = tokens.length;
 
-  for (let i = 0; i < len; i++) {
-    if ((result ?? tokens)[i].tokenType !== TK.LessThan) continue;
+  // `>>` splits grow the token stream inside tryMarkTemplate, so we must read
+  // the length on every iteration rather than capturing it up front.
+  for (let i = 0; i < (result ?? tokens).length; i++) {
+    const current = (result ?? tokens)[i];
+    if (current.tokenType !== TK.LessThan) continue;
 
     if (i === 0) continue;
     const prev = (result ?? tokens)[i - 1];

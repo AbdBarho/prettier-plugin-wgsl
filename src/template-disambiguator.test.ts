@@ -80,6 +80,17 @@ describe("template disambiguator", () => {
     ]);
   });
 
+  it("still disambiguates templates that appear after >>-splices near the end", () => {
+    // Regression: each `>>` split grows the token array by one. If the outer
+    // scan uses a length captured before splicing, trailing `<` tokens at the
+    // tail of the stream are never visited and stay as LessThan.
+    const src = "array<vec3<f32>>; array<vec3<f32>>; array<vec3<f32>>; var<uniform>";
+    const kinds = kindsAfterDisambig(src);
+    // There must be no leftover LessThan / GreaterThan — all angle brackets are templates.
+    expect(kinds).not.toContain("LessThan");
+    expect(kinds).not.toContain("GreaterThan");
+  });
+
   it("splits >> in deeper nesting: array<vec4<vec4<f32>>>", () => {
     const { tokens } = tokenize("array<vec4<vec4<f32>>>");
     const result = disambiguateTemplates(tokens);

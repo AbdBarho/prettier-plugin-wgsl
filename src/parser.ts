@@ -1126,10 +1126,13 @@ export function parse(source: string): TranslationUnit {
   const ast = parserInstance.translationUnit();
 
   if (parserInstance.errors.length > 0) {
-    const err = parserInstance.errors[0];
-    const loc =
-      err.token.startLine != null && !isNaN(err.token.startLine) ? ` at line ${err.token.startLine}, column ${err.token.startColumn}` : "";
-    throw new Error(`Parse error${loc}: ${err.message}`);
+    const lines = parserInstance.errors.map((err) => {
+      const t = err.token;
+      const loc = t.startLine != null && !isNaN(t.startLine) ? `line ${t.startLine}, column ${t.startColumn}` : `offset ${t.startOffset}`;
+      return `  - at ${loc}: ${err.message}`;
+    });
+    const count = parserInstance.errors.length;
+    throw new Error(`Parse error (${count} issue${count === 1 ? "" : "s"}):\n${lines.join("\n")}`);
   }
 
   // Attach comments both as leadingComments (for legacy printer) and as

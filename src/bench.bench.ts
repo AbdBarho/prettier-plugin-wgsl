@@ -9,10 +9,12 @@ import plugin from "./index.ts";
 
 const source = ["boids.wgsl", "shadow.wgsl", "skybox.wgsl", "water.wgsl"]
   .map((name) => readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "fixtures", name), "utf-8"))
-  .join("\n");
+  .join("\n")
+  .repeat(10);
 
-// 2s warmup for JIT stabilization, 5s measurement for sufficient samples
-const opts = { warmupTime: 2000, time: 5000 } as const;
+console.log(`Num chars: ${source.length}, num lines ${source.split("\n").length}`);
+
+const opts = { warmupTime: 500, time: 5000 } as const;
 
 bench(
   "lex",
