@@ -61,37 +61,75 @@ function needsBlankLineBetween(prev: Declaration, curr: Declaration): boolean {
   return true;
 }
 
-// Precomputed blank-line lookup for efficient hasBlankLineBetween() checks.
+/**
+ * Precomputed blank-line info for preserving intentional blank lines in output.
+ *
+ * Instead of a per-character offset→line lookup (Uint32Array of text.length),
+ * we store only the starting offset of each line. To find which line a given
+ * source offset falls on, we binary-search `lineStarts` — O(log L) per query
+ * where L = number of lines, vs O(1) before but with O(N) memory where N = chars.
+ *
+ * `blankLines` is the set of 1-based line numbers whose content is whitespace-only.
+ */
 interface BlankLineInfo {
-  offsetToLine: Uint32Array;
+  lineStarts: number[];
   blankLines: Set<number>;
 }
 
+/**
+ * Scan source text once to build blank-line metadata.
+ *
+ * Walks every character looking for '\n'. For each line boundary, checks whether
+ * the line was blank by scanning its characters directly (no substring allocation).
+ * Whitespace characters: space (32), tab (9), carriage return (13).
+ *
+ * Result: `lineStarts[i]` is the character offset where (1-based) line `i+1` begins.
+ */
 function buildBlankLineInfo(text: string): BlankLineInfo {
-  const offsetToLine = new Uint32Array(text.length + 1);
+  const lineStarts: number[] = [0]; // lineStarts[0] = 0 → line 1 starts at offset 0
   const blankLines = new Set<number>();
-  let lineNum = 1;
-  let lineStart = 0;
-
-  for (let i = 0; i <= text.length; i++) {
-    offsetToLine[i] = lineNum;
-    if (i === text.length || text[i] === "\n") {
-      const lineContent = text.slice(lineStart, i);
-      if (lineContent.trim() === "") blankLines.add(lineNum);
-      lineNum++;
-      lineStart = i + 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\n") {
+      const lineNum = lineStarts.length; // the line that just ended (1-based)
+      // Check if the line is blank: scan from its start to '\n', looking for non-whitespace
+      let blank = true;
+      for (let j = lineStarts[lineNum - 1]; j < i; j++) {
+        const c = text.charCodeAt(j);
+        if (c !== 32 && c !== 9 && c !== 13) {
+          blank = false;
+          break;
+        }
+      }
+      if (blank) blankLines.add(lineNum);
+      lineStarts.push(i + 1); // next line starts after the '\n'
     }
   }
-
-  return { offsetToLine, blankLines };
+  return { lineStarts, blankLines };
 }
 
-// Formatting context, initialized per print() call from Prettier options.
-// Scoped to a single formatting session.
+/**
+ * Binary-search `lineStarts` to find the 1-based line number for a character offset.
+ *
+ * `lineStarts` is sorted ascending (each entry is where a new line begins).
+ * We find the rightmost entry ≤ offset — that entry's index + 1 is the line number.
+ */
+function offsetToLine(lineStarts: number[], offset: number): number {
+  let lo = 0;
+  let hi = lineStarts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (lineStarts[mid] <= offset) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo + 1; // 1-based
+}
+
+// Formatting context, initialized once per format session (not per node).
 interface PrintContext {
   blankLineInfo: BlankLineInfo;
 }
-let ctx: PrintContext = { blankLineInfo: { offsetToLine: new Uint32Array(0), blankLines: new Set() } };
+let ctx: PrintContext = { blankLineInfo: { lineStarts: [0], blankLines: new Set() } };
+let cachedOriginalText: string | null = null;
 
 // Helper to call a child through Prettier's path traversal (enables comment injection)
 function callChild(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc, field: string): Doc {
@@ -109,9 +147,10 @@ export const print: Printer<ASTNode>["print"] = function printNode(
 ): Doc {
   const node = path.node;
   if (!node) return "";
-  // Capture original text on first call (Prettier calls print() once per node)
-  if ("originalText" in options && typeof options.originalText === "string") {
+  // Build blank-line info once per format session (not per node).
+  if ("originalText" in options && typeof options.originalText === "string" && options.originalText !== cachedOriginalText) {
     ctx = { blankLineInfo: buildBlankLineInfo(options.originalText) };
+    cachedOriginalText = options.originalText;
   }
   return printASTNodeFromPath(node, path, printFn);
 };
@@ -583,10 +622,10 @@ function printTypeExpr(node: TypeExpr): Doc {
 // Returns true if the source text between two offsets contains a blank line
 // A blank line is an empty line (or whitespace-only line) between two newlines
 function hasBlankLineBetween(fromEnd: number, toStart: number): boolean {
-  const { offsetToLine, blankLines } = ctx.blankLineInfo;
-  if (offsetToLine.length === 0) return false;
-  const startLine = offsetToLine[fromEnd] ?? 0;
-  const endLine = offsetToLine[toStart] ?? 0;
+  const { lineStarts, blankLines } = ctx.blankLineInfo;
+  if (lineStarts.length <= 1) return false;
+  const startLine = offsetToLine(lineStarts, fromEnd);
+  const endLine = offsetToLine(lineStarts, toStart);
   for (let l = startLine; l <= endLine; l++) {
     if (blankLines.has(l)) return true;
   }
@@ -713,7 +752,16 @@ function getBinaryPrecedenceGroup(op: string): number {
   }
 }
 
-// Flatten a left-recursive chain of same-precedence binary ops into parts and ops
+/**
+ * Flatten a left-recursive binary expression chain into a list of operands and operators.
+ *
+ * Given `a + b + c * d`, where `+` has the same precedence group, this produces:
+ *   parts: [a, b, (c * d)]   ops: ["+", "+"]
+ *
+ * The recursive `collect` walks the left spine of same-precedence nodes, pushing
+ * right children in order. The leftmost leaf (not same-precedence) is inserted first
+ * via unshift — this is O(1) since the array is always empty at that point.
+ */
 function flattenBinaryChain(node: BinaryExpr): { parts: Expr[]; ops: string[] } {
   const prec = getBinaryPrecedenceGroup(node.op);
   const parts: Expr[] = [];
@@ -729,7 +777,6 @@ function flattenBinaryChain(node: BinaryExpr): { parts: Expr[]; ops: string[] } 
     }
   }
 
-  // Start: walk the left spine, push right children
   collect(node);
   return { parts, ops };
 }

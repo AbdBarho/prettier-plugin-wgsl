@@ -1,3 +1,6 @@
+// End-to-end formatting tests: complete shaders and real-world fixtures.
+// Uses printWidth=120 (wider than printer.test.ts's 80) to test realistic formatting.
+// For isolated syntax/formatting unit tests, see printer.test.ts.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
@@ -68,23 +71,28 @@ return color;
     await assertIdempotentAtAllWidths(input);
   });
 
-  it("formats all compound assignment operators", async () => {
-    const ops = ["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="];
-    for (const op of ops) {
+  it.each(["+=", "-=", "*=", "/=", "%=", "&=", "|=", "^="])(
+    "formats compound assignment %s",
+    async (op) => {
       const input = `fn f(){x${op}1;}`;
       const result = await fmt(input);
-      expect(result).toMatchSnapshot(`compound assignment ${op}`);
-    }
-  });
+      expect(result).toMatchSnapshot();
+      await assertIdempotentAtAllWidths(input);
+    },
+  );
 
   it("formats const_assert", async () => {
-    const result = await fmt("const_assert true;");
+    const input = "const_assert true;";
+    const result = await fmt(input);
     expect(result).toMatchSnapshot();
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("preserves boolean literals", async () => {
-    const result = await fmt("const a=true;const b=false;");
+    const input = "const a=true;const b=false;";
+    const result = await fmt(input);
     expect(result).toMatchSnapshot();
+    await assertIdempotentAtAllWidths(input);
   });
 
   it("idempotency - full shader", async () => {
@@ -363,12 +371,14 @@ atomicAdd(&data[flatIdx].r,1u);
       const input = `// This is a shader\nconst x = 1;`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
+      await assertIdempotentAtAllWidths(input);
     });
 
     it("preserves block comments", async () => {
       const input = `/* Block comment */\nconst x = 1;`;
       const result = await fmt(input);
       expect(result).toMatchSnapshot();
+      await assertIdempotentAtAllWidths(input);
     });
   });
 });

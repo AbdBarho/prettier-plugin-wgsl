@@ -1,3 +1,6 @@
+// Unit tests for individual formatting rules: directives, declarations, expressions,
+// statements, wrapping, blank lines, comments, and idempotency.
+// Uses printWidth=80. For full-shader integration tests, see format.test.ts.
 import { describe, it, expect } from "vitest";
 import { getCommentChildNodes } from "./printer.ts";
 import { fmt as fmtBase, assertIdempotentAtAllWidths } from "./test-helpers.ts";
@@ -907,6 +910,38 @@ fn main() -> @builtin(position) vec4f {
   y: f32, // y coord
 }
 `);
+    });
+  });
+
+  describe("comment edge cases", () => {
+    it("moves comment after opening brace to its own line", async () => {
+      const input = `fn f() {// comment\n  return;\n}`;
+      const result = await fmt(input);
+      expect(result).toBe("fn f() {\n  // comment\n  return;\n}\n");
+    });
+
+    it("formats empty block comment", async () => {
+      const result = await fmt("/**/ const x = 1;");
+      expect(result).toBe("/**/\nconst x = 1;\n");
+    });
+
+    it("preserves consecutive line comments", async () => {
+      const input = `// first\n// second\nconst x = 1;\n`;
+      const result = await fmt(input);
+      expect(result).toBe("// first\n// second\nconst x = 1;\n");
+    });
+
+    it("preserves trailing comment at end of file", async () => {
+      const input = `const x = 1;\n// end`;
+      const result = await fmt(input);
+      expect(result).toBe("const x = 1;\n// end\n");
+    });
+
+    it("is idempotent for comment edge cases", async () => {
+      await assertIdempotentAtAllWidths("fn f() {// comment\n  return;\n}");
+      await assertIdempotentAtAllWidths("/**/ const x = 1;");
+      await assertIdempotentAtAllWidths("// first\n// second\nconst x = 1;");
+      await assertIdempotentAtAllWidths("const x = 1;\n// end");
     });
   });
 

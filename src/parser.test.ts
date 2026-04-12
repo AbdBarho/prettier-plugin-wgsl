@@ -578,11 +578,15 @@ describe("parser", () => {
 
   describe("error handling", () => {
     it("includes line and column in parse error", () => {
-      expect(() => parse("fn 123() {}")).toThrow(/line 1/i);
+      expect(() => parse("fn 123() {}")).toThrow(/Parse error at line 1, column 4/);
     });
 
     it("includes correct line for multi-line errors", () => {
-      expect(() => parse("const x = 1;\nconst y =\n  !!;")).toThrow(/line 3/i);
+      expect(() => parse("const x = 1;\nconst y =\n  !!;")).toThrow(/Parse error at line 3/);
+    });
+
+    it("includes correct column for mid-line errors", () => {
+      expect(() => parse("const x = 1; const y = ;")).toThrow(/Parse error at line 1, column 24/);
     });
 
     it("throws on incomplete var declaration", () => {
@@ -594,7 +598,7 @@ describe("parser", () => {
     });
 
     it("throws on unexpected token", () => {
-      expect(() => parse("fn () {}")).toThrow(/Parse error.*line 1/);
+      expect(() => parse("fn () {}")).toThrow(/Parse error at line 1/);
     });
 
     it("throws on unclosed brace", () => {
@@ -602,11 +606,15 @@ describe("parser", () => {
     });
 
     it("throws on empty expression", () => {
-      expect(() => parse("const x = ;")).toThrow(/Parse error.*line 1/);
+      expect(() => parse("const x = ;")).toThrow(/Parse error at line 1/);
     });
 
     it("throws on unclosed parenthesis", () => {
-      expect(() => parse("fn f() { foo(; }")).toThrow(/Parse error.*line 1/);
+      expect(() => parse("fn f() { foo(; }")).toThrow(/Parse error at line 1/);
+    });
+
+    it("reports first error when input has multiple issues", () => {
+      expect(() => parse("var\nvar")).toThrow(/Parse error at line.*column/);
     });
   });
 });

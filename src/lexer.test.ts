@@ -60,36 +60,33 @@ describe("lexer", () => {
       ]);
     });
 
-    it("tokenizes all keywords correctly", () => {
-      const kwMap: Record<string, string> = {
-        alias: "Alias",
-        break: "Break",
-        case: "Case",
-        const: "Const",
-        const_assert: "ConstAssert",
-        continue: "Continue",
-        continuing: "Continuing",
-        default: "Default",
-        diagnostic: "Diagnostic",
-        discard: "Discard",
-        else: "Else",
-        enable: "Enable",
-        fn: "Fn",
-        for: "For",
-        if: "If",
-        let: "Let",
-        loop: "Loop",
-        override: "Override",
-        requires: "Requires",
-        return: "Return",
-        struct: "Struct",
-        switch: "Switch",
-        var: "Var",
-        while: "While",
-      };
-      for (const [kw, name] of Object.entries(kwMap)) {
-        expect(kindsNoComments(kw)).toEqual([name]);
-      }
+    it.each([
+      ["alias", "Alias"],
+      ["break", "Break"],
+      ["case", "Case"],
+      ["const", "Const"],
+      ["const_assert", "ConstAssert"],
+      ["continue", "Continue"],
+      ["continuing", "Continuing"],
+      ["default", "Default"],
+      ["diagnostic", "Diagnostic"],
+      ["discard", "Discard"],
+      ["else", "Else"],
+      ["enable", "Enable"],
+      ["fn", "Fn"],
+      ["for", "For"],
+      ["if", "If"],
+      ["let", "Let"],
+      ["loop", "Loop"],
+      ["override", "Override"],
+      ["requires", "Requires"],
+      ["return", "Return"],
+      ["struct", "Struct"],
+      ["switch", "Switch"],
+      ["var", "Var"],
+      ["while", "While"],
+    ])("tokenizes keyword '%s' as %s", (kw, name) => {
+      expect(kindsNoComments(kw)).toEqual([name]);
     });
 
     it("tokenizes bool literals", () => {

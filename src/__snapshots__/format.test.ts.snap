@@ -296,56 +296,56 @@ fn fs(v: VertexOutput) -> @location(0) vec4f {
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment %= 1`] = `
+exports[`end-to-end formatting > formats compound assignment %= 1`] = `
 "fn f() {
   x %= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment &= 1`] = `
+exports[`end-to-end formatting > formats compound assignment &= 1`] = `
 "fn f() {
   x &= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment *= 1`] = `
+exports[`end-to-end formatting > formats compound assignment *= 1`] = `
 "fn f() {
   x *= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment += 1`] = `
+exports[`end-to-end formatting > formats compound assignment += 1`] = `
 "fn f() {
   x += 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment /= 1`] = `
+exports[`end-to-end formatting > formats compound assignment /= 1`] = `
 "fn f() {
   x /= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment ^= 1`] = `
+exports[`end-to-end formatting > formats compound assignment ^= 1`] = `
 "fn f() {
   x ^= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment |= 1`] = `
+exports[`end-to-end formatting > formats compound assignment |= 1`] = `
 "fn f() {
   x |= 1;
 }
 "
 `;
 
-exports[`end-to-end formatting > formats all compound assignment operators > compound assignment -= 1`] = `
+exports[`end-to-end formatting > formats compound assignment -= 1`] = `
 "fn f() {
   x -= 1;
 }

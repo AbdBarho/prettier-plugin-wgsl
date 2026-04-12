@@ -66,4 +66,35 @@ describe("template disambiguator", () => {
     const kinds = kindsAfterDisambig("a < b;");
     expect(kinds).not.toContain("TemplateArgsOpen");
   });
+
+  it("splits >> (ShiftRight) into two TemplateArgsClose for nested templates", () => {
+    const kinds = kindsAfterDisambig("vec4<vec4<f32>>");
+    expect(kinds).toEqual([
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsClose",
+      "TemplateArgsClose",
+    ]);
+  });
+
+  it("splits >> in deeper nesting: array<vec4<vec4<f32>>>", () => {
+    const { tokens } = tokenize("array<vec4<vec4<f32>>>");
+    const result = disambiguateTemplates(tokens);
+    const kinds = result.map((t) => t.tokenType.name);
+    expect(kinds).toEqual([
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsOpen",
+      "Ident",
+      "TemplateArgsClose",
+      "TemplateArgsClose",
+      "TemplateArgsClose",
+    ]);
+  });
 });

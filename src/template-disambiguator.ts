@@ -21,22 +21,27 @@ function retype(token: IToken, newType: TokenType, image: string): IToken {
  * Algorithm from WGSL spec: When `<` follows an identifier, scan forward
  * tracking ()/[] depth. If a matching `>` is found at depth 0 before
  * hitting `;`, `{`, `=`, `&&`, `||`, mark both as template delimiters.
+ *
+ * Uses copy-on-write: the token array is only cloned when we find the first
+ * potential template opener (`<` preceded by an identifier). Files without
+ * templates skip the copy entirely.
  */
 export function disambiguateTemplates(tokens: IToken[]): IToken[] {
-  const result = tokens.map((t) => ({ ...t }));
-  const len = result.length;
+  let result: IToken[] | null = null; // lazily copied on first template candidate
+  const len = tokens.length;
 
   for (let i = 0; i < len; i++) {
-    if (result[i].tokenType !== TK.LessThan) continue;
+    if ((result ?? tokens)[i].tokenType !== TK.LessThan) continue;
 
     if (i === 0) continue;
-    const prev = result[i - 1];
+    const prev = (result ?? tokens)[i - 1];
     if (prev.tokenType !== TK.Ident && prev.tokenType !== TK.Var) continue;
 
+    if (!result) result = tokens.map((t) => ({ ...t })); // first template: copy all
     tryMarkTemplate(result, i);
   }
 
-  return result;
+  return result ?? tokens; // no templates found → return original array, zero allocation
 }
 
 function tryMarkTemplate(tokens: IToken[], openIdx: number): boolean {
