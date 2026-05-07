@@ -559,8 +559,8 @@ describe("parser", () => {
   describe("comments", () => {
     it("collects comments from source", () => {
       const ast = parse("// hello\nconst x = 1;");
-      expect(ast.leadingComments).toHaveLength(1);
-      expect(ast.leadingComments![0]).toMatchObject({
+      expect(ast.comments).toHaveLength(1);
+      expect(ast.comments![0]).toMatchObject({
         kind: "LineComment",
         value: "// hello",
       });
@@ -568,8 +568,8 @@ describe("parser", () => {
 
     it("collects block comments", () => {
       const ast = parse("/* block */ const x = 1;");
-      expect(ast.leadingComments).toHaveLength(1);
-      expect(ast.leadingComments![0]).toMatchObject({
+      expect(ast.comments).toHaveLength(1);
+      expect(ast.comments![0]).toMatchObject({
         kind: "BlockComment",
         value: "/* block */",
       });

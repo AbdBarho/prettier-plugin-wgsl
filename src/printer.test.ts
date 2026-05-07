@@ -2,7 +2,7 @@
 // statements, wrapping, blank lines, comments, and idempotency.
 // Uses printWidth=80. For full-shader integration tests, see format.test.ts.
 import { describe, it, expect } from "vitest";
-import { getCommentChildNodes } from "./printer.ts";
+import { canAttachComment, getCommentChildNodes } from "./printer.ts";
 import { fmt as fmtBase, assertIdempotentAtAllWidths } from "./test-helpers.ts";
 
 async function fmt(input: string, printWidth: number = 80): Promise<string> {
@@ -1015,6 +1015,266 @@ fn main() -> @builtin(position) vec4f {
       const body = { kind: "Block" as const, statements: [], start: 10, end: 12 };
       const node = { kind: "ForStmt" as const, init: null, condition: null, update: null, body, start: 0, end: 12 };
       expect(getCommentChildNodes(node)).toEqual([body]);
+    });
+  });
+
+  describe("comments inside expressions (path-based dispatch)", () => {
+    it("preserves a comment between the LHS and operator of a binary expression", async () => {
+      const input = `fn f() -> i32 { return a /* C */ + b; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between callee and arglist of a call expression", async () => {
+      const input = `fn f() -> i32 { return foo /* C */ (1, 2); }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between object and . in a member expression", async () => {
+      const input = `fn f() -> i32 { return obj /* C */ .field; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between object and [ in an index expression", async () => {
+      const input = `fn f() -> i32 { return arr /* C */ [0]; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a unary expression", async () => {
+      const input = `fn f() -> i32 { return - /* C */ x; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a parenthesized expression", async () => {
+      const input = `fn f() -> i32 { return ( /* C */ x); }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+  });
+
+  describe("comments inside statements (path-based dispatch)", () => {
+    it("preserves a comment between `return` and its value", async () => {
+      const input = `fn f() -> i32 { return /* C */ 42; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between LHS and `=` in assignment", async () => {
+      const input = `fn f() { var x = 0; x /* C */ = 1; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between `=` and RHS in let", async () => {
+      const input = `fn f() { let x = /* C */ 1; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside an expression statement", async () => {
+      const input = `fn f() { foo /* C */ (); }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a phony assign", async () => {
+      const input = `fn f() { _ = /* C */ foo(); }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a const_assert", async () => {
+      const input = `const_assert /* C */ true;`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+  });
+
+  describe("dispatch unification", () => {
+    it("renders every AST kind through a single entry point (smoke)", async () => {
+      const input = `
+enable f16;
+struct S { x: f32, }
+const C: f32 = 1.0;
+@vertex fn main(@location(0) p: vec3f) -> @builtin(position) vec4f {
+  var v: i32 = 0;
+  let l = 1;
+  if (v > 0) { v++; } else { v--; }
+  for (var i = 0; i < 4; i++) { v += i; }
+  while (v < 10) { v *= 2; }
+  loop { continuing { break if v > 100; } }
+  switch v { case 0: { discard; } default: { return vec4f(0); } }
+  _ = v;
+  return vec4f(f32(v));
+}
+`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+    });
+  });
+
+  describe("comments inside containers (path-based)", () => {
+    it("preserves a comment between if condition and body", async () => {
+      const input = `fn f() { if x /* C */ { } }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a switch expression", async () => {
+      const input = `fn f() { switch /* C */ x { default: { } } }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between for-loop sections", async () => {
+      const input = `fn f() { for (var i = 0; /* C */ i < 4; i++) { } }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between fn return type and body", async () => {
+      const input = `fn f() -> i32 /* C */ { return 0; }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between return attribute and return type", async () => {
+      const input = `fn f() -> @location(0) /* C */ vec4f { return vec4f(0); }`;
+      const result = await fmt(input, 80);
+      expect(result).toMatch(/@location\(0\)\s+\/\* C \*\/\s+vec4f/);
+    });
+
+    it("preserves a comment between struct members", async () => {
+      const input = `struct S { a: i32, /* C */ b: i32, }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+  });
+
+  describe("comments inside attributes and types (path-based)", () => {
+    it("preserves a comment inside attribute args", async () => {
+      const input = `@align(/* C */ 16) var<storage> x: i32;`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between template args", async () => {
+      const input = `var x: array<i32, /* C */ 4>;`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment inside a struct member's type-expr template args", async () => {
+      const input = `struct S { x: array<f32, /* C */ 4>, }`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+
+    it("preserves a comment between a parameter attribute and the parameter", async () => {
+      const input = `fn f(@location(0) /* C */ p: vec3f) {}`;
+      const result = await fmt(input, 80);
+      expect(result).toContain("/* C */");
+    });
+  });
+
+  describe("canAttachComment whitelist", () => {
+    it("rejects expression container kinds that don't anchor printed output", () => {
+      const ident = { kind: "IdentExpr" as const, name: "x", start: 0, end: 1 };
+      expect(canAttachComment({ kind: "BinaryExpr", op: "+", left: ident, right: ident, start: 0, end: 5 })).toBe(false);
+      expect(canAttachComment({ kind: "UnaryExpr", op: "-", operand: ident, start: 0, end: 2 })).toBe(false);
+      expect(canAttachComment({ kind: "MemberExpr", object: ident, member: "f", start: 0, end: 3 })).toBe(false);
+      expect(canAttachComment({ kind: "IndexExpr", object: ident, index: ident, start: 0, end: 4 })).toBe(false);
+      expect(canAttachComment({ kind: "ParenExpr", expr: ident, start: 0, end: 3 })).toBe(false);
+      expect(canAttachComment({ kind: "DefaultSelector", start: 0, end: 7 })).toBe(false);
+    });
+
+    it("accepts statement, declaration, and Prettier-auto-anchored expression kinds", () => {
+      const lit = { kind: "LiteralExpr" as const, value: "1", literalType: "int" as const, start: 0, end: 1 };
+      expect(canAttachComment({ kind: "ReturnStmt", value: null, start: 0, end: 7 })).toBe(true);
+      expect(canAttachComment({ kind: "ConstDeclaration", name: "X", type: null, initializer: lit, start: 0, end: 10 })).toBe(true);
+      expect(canAttachComment({ kind: "IdentExpr", name: "x", start: 0, end: 1 })).toBe(true);
+      expect(canAttachComment(lit)).toBe(true);
+      expect(canAttachComment({ kind: "CallExpr", callee: "f", args: [], templateArgs: [], start: 0, end: 3 })).toBe(true);
+      expect(canAttachComment({ kind: "Attribute", name: "vertex", args: [], start: 0, end: 7 })).toBe(true);
+      expect(canAttachComment({ kind: "TypeExpr", name: "i32", templateArgs: [], start: 0, end: 3 })).toBe(true);
+    });
+  });
+
+  describe("canAttachComment baseline", () => {
+    it("matches snapshot for varied comment placements", async () => {
+      const input = `
+// File header
+enable f16;
+
+// Struct comment
+struct S {
+  // Member comment
+  x: f32,
+  y: f32, // trailing
+}
+
+// Const comment
+const PI = 3.14;
+
+// Function comment
+fn main() {
+  // Var comment
+  var a = 1;
+  // Return comment
+  return;
+}
+`;
+      const result = await fmt(input);
+      expect(result).toMatchSnapshot();
+    });
+  });
+
+  describe("comments rely on ast.comments only", () => {
+    it("renders all comment kinds without leadingComments on root", async () => {
+      const input = `
+// leading line
+/* leading block */
+enable f16;
+const X = 1; // trailing
+/* between */
+fn f() {
+  // body comment
+  return;
+}
+`;
+      const result = await fmt(input);
+      expect(result).toContain("// leading line");
+      expect(result).toContain("/* leading block */");
+      expect(result).toContain("// trailing");
+      expect(result).toContain("/* between */");
+      expect(result).toContain("// body comment");
+      expect(result).toMatchSnapshot();
+    });
+  });
+
+  describe("printer state isolation", () => {
+    it("formats two different sources concurrently without cross-contamination", async () => {
+      const inputA = `fn a() {\n  // comment A\n  return;\n}\n`;
+      const inputB = `fn b() {\n  // comment B\n  return;\n}\n`;
+      const [a, b] = await Promise.all([fmt(inputA), fmt(inputB)]);
+      expect(a).toContain("// comment A");
+      expect(a).not.toContain("// comment B");
+      expect(b).toContain("// comment B");
+      expect(b).not.toContain("// comment A");
+    });
+
+    it("preserves blank lines correctly when two distinct sources are formatted back-to-back", async () => {
+      const inputWithBlank = `const A = 1;\n\nconst B = 2;\n`;
+      const inputWithoutBlank = `const X = 1;\nconst Y = 2;\n`;
+      const a = await fmt(inputWithBlank);
+      const b = await fmt(inputWithoutBlank);
+      expect(a).toContain("const A = 1;\n\nconst B = 2;");
+      expect(b).toContain("const X = 1;\nconst Y = 2;");
+      expect(b).not.toContain("const X = 1;\n\nconst Y = 2;");
     });
   });
 });

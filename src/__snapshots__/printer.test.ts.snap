@@ -1,5 +1,87 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`printer > canAttachComment baseline > matches snapshot for varied comment placements 1`] = `
+"// File header
+enable f16;
+
+// Struct comment
+struct S {
+  // Member comment
+  x: f32,
+  y: f32, // trailing
+}
+
+// Const comment
+const PI = 3.14;
+
+// Function comment
+fn main() {
+  // Var comment
+  var a = 1;
+  // Return comment
+  return;
+}
+"
+`;
+
+exports[`printer > comments rely on ast.comments only > renders all comment kinds without leadingComments on root 1`] = `
+"// leading line
+/* leading block */
+enable f16;
+
+const X = 1; // trailing
+
+/* between */
+fn f() {
+  // body comment
+  return;
+}
+"
+`;
+
+exports[`printer > dispatch unification > renders every AST kind through a single entry point (smoke) 1`] = `
+"enable f16;
+
+struct S {
+  x: f32,
+}
+
+const C: f32 = 1.0;
+
+@vertex
+fn main(@location(0) p: vec3f) -> @builtin(position) vec4f {
+  var v: i32 = 0;
+  let l = 1;
+  if (v > 0) {
+    v++;
+  } else {
+    v--;
+  }
+  for (var i = 0; i < 4; i++) {
+    v += i;
+  }
+  while (v < 10) {
+    v *= 2;
+  }
+  loop {
+    continuing {
+      break if v > 100;
+    }
+  }
+  switch v {
+    case 0: {
+      discard;
+    }
+    default: {
+      return vec4f(0);
+    }
+  }
+  _ = v;
+  return vec4f(f32(v));
+}
+"
+`;
+
 exports[`printer > large switch > formats 30-case switch with u-suffixed selectors 1`] = `
 "fn f(v: vec2<f32>, idx: u32, m: mat3x3<f32>, r: ptr<function, u32>) -> vec2<
   f32,

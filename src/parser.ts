@@ -1135,20 +1135,13 @@ export function parse(source: string): TranslationUnit {
     throw new Error(`Parse error (${count} issue${count === 1 ? "" : "s"}):\n${lines.join("\n")}`);
   }
 
-  // Attach comments both as leadingComments (for legacy printer) and as
-  // a `comments` array on the root node (for Prettier's comment handling API)
+  // Prettier reads `comments` from the root AST node.
   const commentNodes: CommentNode[] = comments.map((c) => ({
     kind: c.tokenType.name === "LineComment" ? ("LineComment" as const) : ("BlockComment" as const),
     value: c.image,
     start: c.startOffset,
     end: c.startOffset + c.image.length,
   }));
-
-  if (commentNodes.length > 0) {
-    ast.leadingComments = commentNodes;
-  }
-
-  // Prettier reads `comments` from the root AST node
   ast.comments = commentNodes;
 
   return ast;

@@ -3,8 +3,6 @@
 export interface BaseNode {
   start: number;
   end: number;
-  leadingComments?: CommentNode[];
-  trailingComments?: CommentNode[];
 }
 
 // ─── Top-level ────────────────────────────────────────────────
@@ -336,3 +334,111 @@ export type ASTNode =
   | ContinuingStmt
   | StructMember
   | CommentNode;
+
+export function assertNever(node: never): never {
+  throw new Error(`Unhandled AST node kind: ${(node as { kind?: string }).kind ?? "<unknown>"}`);
+}
+
+// Order matters: Prettier's comment attachment uses positional proximity to a
+// child node to decide which side a comment lands on.
+export function children(node: ASTNode): ASTNode[] {
+  switch (node.kind) {
+    case "TranslationUnit":
+      return [...node.directives, ...node.declarations];
+    case "FunctionDeclaration":
+      return [
+        ...node.attributes,
+        ...node.params,
+        ...node.returnAttributes,
+        ...(node.returnType ? [node.returnType] : []),
+        node.body,
+      ];
+    case "StructDeclaration":
+      return node.members;
+    case "StructMember":
+      return [...node.attributes, node.type];
+    case "Block":
+      return node.statements;
+    case "IfStmt":
+      return [node.condition, node.body, ...(node.elseClause ? [node.elseClause] : [])];
+    case "ForStmt":
+      return [
+        ...(node.init ? [node.init] : []),
+        ...(node.condition ? [node.condition] : []),
+        ...(node.update ? [node.update] : []),
+        node.body,
+      ];
+    case "WhileStmt":
+      return [node.condition, node.body];
+    case "LoopStmt":
+      return [node.body, ...(node.continuing ? [node.continuing] : [])];
+    case "ContinuingStmt":
+      return [node.body, ...(node.breakIf ? [node.breakIf] : [])];
+    case "SwitchStmt":
+      return [node.expr, ...node.clauses];
+    case "CaseClause":
+      return [...node.selectors, node.body];
+    case "ReturnStmt":
+      return node.value ? [node.value] : [];
+    case "AssignStmt":
+      return [node.target, node.value];
+    case "IncrDecrStmt":
+      return [node.target];
+    case "ExprStmt":
+      return [node.expr];
+    case "PhonyAssignStmt":
+      return [node.value];
+    case "BinaryExpr":
+      return [node.left, node.right];
+    case "UnaryExpr":
+      return [node.operand];
+    case "CallExpr":
+      return [...node.templateArgs, ...node.args];
+    case "MemberExpr":
+      return [node.object];
+    case "IndexExpr":
+      return [node.object, node.index];
+    case "ParenExpr":
+      return [node.expr];
+    case "VarDeclaration":
+      return [
+        ...node.attributes,
+        ...(node.type ? [node.type] : []),
+        ...(node.initializer ? [node.initializer] : []),
+      ];
+    case "LetDeclaration":
+      return [...(node.type ? [node.type] : []), node.initializer];
+    case "ConstDeclaration":
+      return [...(node.type ? [node.type] : []), node.initializer];
+    case "OverrideDeclaration":
+      return [
+        ...node.attributes,
+        ...(node.type ? [node.type] : []),
+        ...(node.initializer ? [node.initializer] : []),
+      ];
+    case "AliasDeclaration":
+      return [node.type];
+    case "ConstAssertStatement":
+      return [node.expr];
+    case "Attribute":
+      return node.args;
+    case "Parameter":
+      return [...node.attributes, node.type];
+    case "TypeExpr":
+      return node.templateArgs;
+    case "EnableDirective":
+    case "RequiresDirective":
+    case "DiagnosticDirective":
+    case "BreakStmt":
+    case "ContinueStmt":
+    case "DiscardStmt":
+    case "IdentExpr":
+    case "LiteralExpr":
+    case "DefaultSelector":
+    case "LineComment":
+    case "BlockComment":
+      return [];
+    default:
+      return assertNever(node);
+  }
+}
