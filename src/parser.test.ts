@@ -613,6 +613,17 @@ describe("parser", () => {
       expect(() => parse("fn f() { foo(; }")).toThrow(/at line 1/);
     });
 
+    it("falls back to an offset when the error token has no location (EOF)", () => {
+      let msg = "";
+      try {
+        parse("fn f() {");
+      } catch (e) {
+        msg = (e as Error).message;
+      }
+      expect(msg).not.toMatch(/NaN|-1/);
+      expect(msg).toMatch(/at end of input/);
+    });
+
     it("formats errors as a numbered issue list", () => {
       let msg = "";
       try {

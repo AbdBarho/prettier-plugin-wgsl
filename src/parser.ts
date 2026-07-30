@@ -1118,6 +1118,11 @@ class WGSLParser extends EmbeddedActionsParser {
 // ─── Singleton parser instance ──────────────────────────────────
 const parserInstance = new WGSLParser();
 
+// Chevrotain marks unavailable token locations with -1 since v13, NaN before.
+function hasLocation(value: number | undefined): value is number {
+  return value != null && !isNaN(value) && value >= 0;
+}
+
 export function parse(source: string): TranslationUnit {
   const { tokens, comments } = tokenize(source);
   const disambiguated = disambiguateTemplates(tokens);
@@ -1128,7 +1133,11 @@ export function parse(source: string): TranslationUnit {
   if (parserInstance.errors.length > 0) {
     const lines = parserInstance.errors.map((err) => {
       const t = err.token;
-      const loc = t.startLine != null && !isNaN(t.startLine) ? `line ${t.startLine}, column ${t.startColumn}` : `offset ${t.startOffset}`;
+      const loc = hasLocation(t.startLine)
+        ? `line ${t.startLine}, column ${t.startColumn}`
+        : hasLocation(t.startOffset)
+          ? `offset ${t.startOffset}`
+          : "end of input";
       return `  - at ${loc}: ${err.message}`;
     });
     const count = parserInstance.errors.length;
