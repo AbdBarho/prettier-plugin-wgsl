@@ -1,6 +1,6 @@
-import type { Plugin, AstPath, Doc } from "prettier";
+import type { Plugin } from "prettier";
 import { parse } from "./parser.ts";
-import { print, getCommentChildNodes, printComment, canAttachComment } from "./printer.ts";
+import { print, getVisitorKeys, printComment, canAttachComment } from "./printer.ts";
 
 const languages = [
   {
@@ -31,7 +31,7 @@ const printers = {
     print,
     canAttachComment,
     printComment,
-    getCommentChildNodes,
+    getVisitorKeys,
   },
 };
 

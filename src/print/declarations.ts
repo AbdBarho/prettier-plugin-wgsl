@@ -1,7 +1,6 @@
-import type { AstPath, Doc } from "prettier";
+import type { Doc } from "prettier";
 import { doc } from "prettier";
 import type {
-  ASTNode,
   TranslationUnit,
   FunctionDeclaration,
   StructDeclaration,
@@ -12,9 +11,7 @@ import type {
   AliasDeclaration,
   Declaration,
 } from "../ast.ts";
-import { callChild, mapChildren } from "./path-helpers.ts";
-import { printDelimitedList } from "./expressions.ts";
-import { hasBlankLineBetween } from "./statements.ts";
+import { type Print, printEach, printDelimitedList, printStatementList } from "./helpers.ts";
 
 const { join, line, hardline, indent, group } = doc.builders;
 
@@ -32,53 +29,26 @@ const SIMPLE_DECL_KINDS = new Set([
 ]);
 
 function needsBlankLineBetween(prev: Declaration, curr: Declaration): boolean {
-  if (SIMPLE_DECL_KINDS.has(prev.kind) && prev.kind === curr.kind) {
-    return false;
-  }
-  return true;
+  return !(SIMPLE_DECL_KINDS.has(prev.kind) && prev.kind === curr.kind);
 }
 
 // ─── Translation unit ─────────────────────────────────────────
 
-export function printTranslationUnit(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as TranslationUnit;
-  const directiveDocs = mapChildren(path, printFn, "directives");
-  const declDocs = mapChildren(path, printFn, "declarations");
+export function printTranslationUnit(node: TranslationUnit, print: Print, text: string): Doc {
+  const directiveDocs = printEach(node, "directives", print);
+  const declDocs = printEach(node, "declarations", print);
+  if (directiveDocs.length === 0 && declDocs.length === 0) return "";
 
-  const allItems = [...directiveDocs, ...declDocs];
-  if (allItems.length === 0) return "";
-
-  const result: Doc[] = [];
-  const directiveCount = node.directives.length;
-  for (let i = 0; i < allItems.length; i++) {
-    if (i > 0) {
-      if (i === directiveCount && directiveCount > 0) {
-        result.push(hardline, hardline);
-      } else if (i < directiveCount) {
-        result.push(hardline);
-      } else {
-        const di = i - directiveCount;
-        const prev = node.declarations[di - 1];
-        const curr = node.declarations[di];
-        if (needsBlankLineBetween(prev, curr)) result.push(hardline, hardline);
-        else if (hasBlankLineBetween(prev.end, curr.start)) result.push(hardline, hardline);
-        else result.push(hardline);
-      }
-    }
-    result.push(allItems[i]);
-  }
-  result.push(hardline);
+  const result: Doc[] = [join(hardline, directiveDocs)];
+  if (directiveDocs.length > 0 && declDocs.length > 0) result.push(hardline, hardline);
+  result.push(...printStatementList(node.declarations, declDocs, text, needsBlankLineBetween), hardline);
   return result;
 }
 
 // ─── Function / Struct ────────────────────────────────────────
 
-export function printFunctionDeclaration(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as FunctionDeclaration;
-  const attrDocs = mapChildren(path, printFn, "attributes");
-  const paramDocs = mapChildren(path, printFn, "params");
-  const bodyDoc = callChild(path, printFn, "body");
-
+export function printFunctionDeclaration(node: FunctionDeclaration, print: Print): Doc {
+  const attrDocs = printEach(node, "attributes", print);
   const parts: Doc[] = [];
 
   const entryAttrDocs: Doc[] = [];
@@ -96,97 +66,73 @@ export function printFunctionDeclaration(path: AstPath<ASTNode>, printFn: (path:
     parts.push(join(" ", otherAttrDocs), hardline);
   }
 
-  parts.push("fn ", node.name);
-
-  if (paramDocs.length === 0) parts.push("()");
-  else parts.push(printDelimitedList("(", ")", paramDocs));
+  parts.push("fn ", node.name, printDelimitedList("(", ")", printEach(node, "params", print)));
 
   if (node.returnType) {
     parts.push(" -> ");
-    const returnAttrDocs = mapChildren(path, printFn, "returnAttributes");
+    const returnAttrDocs = printEach(node, "returnAttributes", print);
     if (returnAttrDocs.length > 0) parts.push(join(" ", returnAttrDocs), " ");
-    parts.push(callChild(path, printFn, "returnType"));
+    parts.push(print("returnType"));
   }
 
-  parts.push(" ", bodyDoc);
+  parts.push(" ", print("body"));
   return parts;
 }
 
-export function printStructDeclaration(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as StructDeclaration;
+export function printStructDeclaration(node: StructDeclaration, print: Print): Doc {
   if (node.members.length === 0) {
     return ["struct ", node.name, " {}"];
   }
-  const memberDocs = mapChildren(path, printFn, "members");
+  const memberDocs = printEach(node, "members", print);
   return ["struct ", node.name, " {", indent([hardline, join([",", hardline], memberDocs)]), ",", hardline, "}"];
 }
 
 // ─── Variable / let / const / override / alias / const_assert ───
 
-// Renders a var/let/const declaration without a trailing semicolon. Used by
-// for-loop init/update; the public wrappers append `;` for statement form.
-export function printVarDeclarationCore(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as VarDeclaration;
+// `semi` is empty when the declaration sits in a for-loop header
+export function printVarDeclaration(node: VarDeclaration, print: Print, semi: string): Doc {
   const parts: Doc[] = [];
   if (node.attributes.length > 0) {
-    parts.push(join(" ", mapChildren(path, printFn, "attributes")), " ");
+    parts.push(join(" ", printEach(node, "attributes", print)), " ");
   }
   parts.push("var");
   if (node.qualifier) parts.push("<", node.qualifier, ">");
   parts.push(" ", node.name);
-  if (node.type) parts.push(": ", callChild(path, printFn, "type"));
+  if (node.type) parts.push(": ", print("type"));
   if (node.initializer) {
-    parts.push(" =");
-    return group([...parts, indent([line, callChild(path, printFn, "initializer")])]);
+    return [group([...parts, " =", indent([line, print("initializer")])]), semi];
   }
-  return parts;
-}
-
-export function printVarDeclaration(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return [printVarDeclarationCore(path, printFn), ";"];
-}
-
-export function printLetOrConstDeclarationCore(
-  path: AstPath<ASTNode>,
-  printFn: (p: AstPath<ASTNode>) => Doc,
-  keyword: "let" | "const",
-): Doc {
-  const node = path.node as LetDeclaration | ConstDeclaration;
-  const parts: Doc[] = [keyword, " ", node.name];
-  if (node.type) parts.push(": ", callChild(path, printFn, "type"));
-  parts.push(" =");
-  return group([...parts, indent([line, callChild(path, printFn, "initializer")])]);
+  return [...parts, semi];
 }
 
 export function printLetOrConstDeclaration(
-  path: AstPath<ASTNode>,
-  printFn: (p: AstPath<ASTNode>) => Doc,
+  node: LetDeclaration | ConstDeclaration,
+  print: Print,
   keyword: "let" | "const",
+  semi: string,
 ): Doc {
-  return [printLetOrConstDeclarationCore(path, printFn, keyword), ";"];
+  const parts: Doc[] = [keyword, " ", node.name];
+  if (node.type) parts.push(": ", print("type"));
+  return [group([...parts, " =", indent([line, print("initializer")])]), semi];
 }
 
-export function printOverrideDeclaration(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as OverrideDeclaration;
+export function printOverrideDeclaration(node: OverrideDeclaration, print: Print): Doc {
   const parts: Doc[] = [];
   if (node.attributes.length > 0) {
-    parts.push(join(" ", mapChildren(path, printFn, "attributes")), " ");
+    parts.push(join(" ", printEach(node, "attributes", print)), " ");
   }
   parts.push("override ", node.name);
-  if (node.type) parts.push(": ", callChild(path, printFn, "type"));
+  if (node.type) parts.push(": ", print("type"));
   if (node.initializer) {
-    parts.push(" =");
-    return group([...parts, indent([line, callChild(path, printFn, "initializer")]), ";"]);
+    return group([...parts, " =", indent([line, print("initializer")]), ";"]);
   }
-  parts.push(";");
-  return parts;
+  return [...parts, ";"];
 }
 
-export function printAliasDeclaration(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as AliasDeclaration;
-  return ["alias ", node.name, " = ", callChild(path, printFn, "type"), ";"];
+export function printAliasDeclaration(node: AliasDeclaration, print: Print): Doc {
+  return ["alias ", node.name, " = ", print("type"), ";"];
 }
 
-export function printConstAssert(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return ["const_assert ", callChild(path, printFn, "expr"), ";"];
+export function printConstAssert(print: Print): Doc {
+  return ["const_assert ", print("expr"), ";"];
 }

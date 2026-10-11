@@ -3,6 +3,8 @@
 export interface BaseNode {
   start: number;
   end: number;
+  // Attached by Prettier during comment handling
+  comments?: CommentNode[];
 }
 
 // ─── Top-level ────────────────────────────────────────────────
@@ -11,7 +13,6 @@ export interface TranslationUnit extends BaseNode {
   kind: "TranslationUnit";
   directives: Directive[];
   declarations: Declaration[];
-  comments?: CommentNode[];
 }
 
 // ─── Directives ───────────────────────────────────────────────
@@ -306,12 +307,19 @@ export type Expr = BinaryExpr | UnaryExpr | CallExpr | MemberExpr | IndexExpr | 
 
 // ─── Comments ─────────────────────────────────────────────────
 
-export interface LineComment extends BaseNode {
+// `leading`/`trailing`/`printed` are set by Prettier when it attaches comments
+interface CommentFlags {
+  leading?: boolean;
+  trailing?: boolean;
+  printed?: boolean;
+}
+
+export interface LineComment extends BaseNode, CommentFlags {
   kind: "LineComment";
   value: string;
 }
 
-export interface BlockComment extends BaseNode {
+export interface BlockComment extends BaseNode, CommentFlags {
   kind: "BlockComment";
   value: string;
 }
@@ -339,106 +347,57 @@ export function assertNever(node: never): never {
   throw new Error(`Unhandled AST node kind: ${(node as { kind?: string }).kind ?? "<unknown>"}`);
 }
 
-// Order matters: Prettier's comment attachment uses positional proximity to a
-// child node to decide which side a comment lands on.
-export function children(node: ASTNode): ASTNode[] {
-  switch (node.kind) {
-    case "TranslationUnit":
-      return [...node.directives, ...node.declarations];
-    case "FunctionDeclaration":
-      return [
-        ...node.attributes,
-        ...node.params,
-        ...node.returnAttributes,
-        ...(node.returnType ? [node.returnType] : []),
-        node.body,
-      ];
-    case "StructDeclaration":
-      return node.members;
-    case "StructMember":
-      return [...node.attributes, node.type];
-    case "Block":
-      return node.statements;
-    case "IfStmt":
-      return [node.condition, node.body, ...(node.elseClause ? [node.elseClause] : [])];
-    case "ForStmt":
-      return [
-        ...(node.init ? [node.init] : []),
-        ...(node.condition ? [node.condition] : []),
-        ...(node.update ? [node.update] : []),
-        node.body,
-      ];
-    case "WhileStmt":
-      return [node.condition, node.body];
-    case "LoopStmt":
-      return [node.body, ...(node.continuing ? [node.continuing] : [])];
-    case "ContinuingStmt":
-      return [node.body, ...(node.breakIf ? [node.breakIf] : [])];
-    case "SwitchStmt":
-      return [node.expr, ...node.clauses];
-    case "CaseClause":
-      return [...node.selectors, node.body];
-    case "ReturnStmt":
-      return node.value ? [node.value] : [];
-    case "AssignStmt":
-      return [node.target, node.value];
-    case "IncrDecrStmt":
-      return [node.target];
-    case "ExprStmt":
-      return [node.expr];
-    case "PhonyAssignStmt":
-      return [node.value];
-    case "BinaryExpr":
-      return [node.left, node.right];
-    case "UnaryExpr":
-      return [node.operand];
-    case "CallExpr":
-      return [...node.templateArgs, ...node.args];
-    case "MemberExpr":
-      return [node.object];
-    case "IndexExpr":
-      return [node.object, node.index];
-    case "ParenExpr":
-      return [node.expr];
-    case "VarDeclaration":
-      return [
-        ...node.attributes,
-        ...(node.type ? [node.type] : []),
-        ...(node.initializer ? [node.initializer] : []),
-      ];
-    case "LetDeclaration":
-      return [...(node.type ? [node.type] : []), node.initializer];
-    case "ConstDeclaration":
-      return [...(node.type ? [node.type] : []), node.initializer];
-    case "OverrideDeclaration":
-      return [
-        ...node.attributes,
-        ...(node.type ? [node.type] : []),
-        ...(node.initializer ? [node.initializer] : []),
-      ];
-    case "AliasDeclaration":
-      return [node.type];
-    case "ConstAssertStatement":
-      return [node.expr];
-    case "Attribute":
-      return node.args;
-    case "Parameter":
-      return [...node.attributes, node.type];
-    case "TypeExpr":
-      return node.templateArgs;
-    case "EnableDirective":
-    case "RequiresDirective":
-    case "DiagnosticDirective":
-    case "BreakStmt":
-    case "ContinueStmt":
-    case "DiscardStmt":
-    case "IdentExpr":
-    case "LiteralExpr":
-    case "DefaultSelector":
-    case "LineComment":
-    case "BlockComment":
-      return [];
-    default:
-      return assertNever(node);
-  }
-}
+type NodeKind = ASTNode["kind"];
+type NodeOf<K extends NodeKind> = Extract<ASTNode, { kind: K }>;
+
+type ChildKey<N> = {
+  [P in keyof N]-?: NonNullable<N[P]> extends ASTNode | ASTNode[] ? P : never;
+}[keyof N] &
+  string;
+
+// Fields holding child nodes, used by Prettier to traverse the AST
+export const visitorKeys: { [K in NodeKind]: ChildKey<NodeOf<K>>[] } = {
+  TranslationUnit: ["directives", "declarations"],
+  EnableDirective: [],
+  RequiresDirective: [],
+  DiagnosticDirective: [],
+  FunctionDeclaration: ["attributes", "params", "returnAttributes", "returnType", "body"],
+  StructDeclaration: ["members"],
+  StructMember: ["attributes", "type"],
+  VarDeclaration: ["attributes", "type", "initializer"],
+  LetDeclaration: ["type", "initializer"],
+  ConstDeclaration: ["type", "initializer"],
+  OverrideDeclaration: ["attributes", "type", "initializer"],
+  AliasDeclaration: ["type"],
+  ConstAssertStatement: ["expr"],
+  Attribute: ["args"],
+  Parameter: ["attributes", "type"],
+  TypeExpr: ["templateArgs"],
+  Block: ["statements"],
+  ReturnStmt: ["value"],
+  IfStmt: ["condition", "body", "elseClause"],
+  ForStmt: ["init", "condition", "update", "body"],
+  WhileStmt: ["condition", "body"],
+  LoopStmt: ["body", "continuing"],
+  ContinuingStmt: ["body", "breakIf"],
+  SwitchStmt: ["expr", "clauses"],
+  CaseClause: ["selectors", "body"],
+  DefaultSelector: [],
+  AssignStmt: ["target", "value"],
+  IncrDecrStmt: ["target"],
+  ExprStmt: ["expr"],
+  BreakStmt: [],
+  ContinueStmt: [],
+  DiscardStmt: [],
+  PhonyAssignStmt: ["value"],
+  BinaryExpr: ["left", "right"],
+  UnaryExpr: ["operand"],
+  CallExpr: ["templateArgs", "args"],
+  MemberExpr: ["object"],
+  IndexExpr: ["object", "index"],
+  IdentExpr: [],
+  LiteralExpr: [],
+  ParenExpr: ["expr"],
+  LineComment: [],
+  BlockComment: [],
+};

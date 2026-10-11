@@ -1,17 +1,14 @@
 import type { AstPath, Doc, Printer } from "prettier";
 import type { ASTNode, CommentNode } from "./ast.ts";
-import { assertNever, children } from "./ast.ts";
-import { getOrBuildContext, withContext } from "./print/context.ts";
+import { assertNever, visitorKeys } from "./ast.ts";
 import {
   printLeafNode,
   printAttribute,
-  printParameter,
-  printStructMember,
+  printParameterOrMember,
   printBinaryExpr,
   printUnaryExpr,
   printCallExpr,
-  printMemberExpr,
-  printIndexExpr,
+  printMemberChain,
   printParenExpr,
   printTypeExpr,
 } from "./print/expressions.ts";
@@ -41,51 +38,47 @@ import {
   printConstAssert,
 } from "./print/declarations.ts";
 
-export const print: Printer<ASTNode>["print"] = function printPrettierEntry(
-  path: AstPath<ASTNode>,
-  options: object,
-  printFn: (path: AstPath<ASTNode>) => Doc,
-): Doc {
-  const node = path.node;
-  if (!node) return "";
-  return withContext(getOrBuildContext(options), () => printNode(path, printFn));
-};
+// Statements in a for-loop header are printed without `;`
+function semicolon(path: AstPath<ASTNode>): string {
+  return path.parent?.kind === "ForStmt" ? "" : ";";
+}
 
-function printNode(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
+export const print: Printer<ASTNode>["print"] = (path, options, print) => {
   const node = path.node;
+  const text = options.originalText;
   switch (node.kind) {
-    case "TranslationUnit":      return printTranslationUnit(path, printFn);
-    case "FunctionDeclaration":  return printFunctionDeclaration(path, printFn);
-    case "Block":                return printBlock(path, printFn);
-    case "IfStmt":               return printIfStmt(path, printFn);
-    case "LoopStmt":             return printLoopStmt(path, printFn);
-    case "ContinuingStmt":       return printContinuingStmt(path, printFn);
-    case "WhileStmt":            return printWhileStmt(path, printFn);
-    case "ForStmt":              return printForStmt(path, printFn);
-    case "SwitchStmt":           return printSwitchStmt(path, printFn);
-    case "CaseClause":           return printCaseClause(path, printFn);
-    case "StructDeclaration":    return printStructDeclaration(path, printFn);
-    case "BinaryExpr":           return printBinaryExpr(path, printFn);
-    case "UnaryExpr":            return printUnaryExpr(path, printFn);
-    case "CallExpr":             return printCallExpr(path, printFn);
-    case "MemberExpr":           return printMemberExpr(path, printFn);
-    case "IndexExpr":            return printIndexExpr(path, printFn);
-    case "ParenExpr":            return printParenExpr(path, printFn);
-    case "TypeExpr":             return printTypeExpr(path, printFn);
-    case "Attribute":            return printAttribute(path, printFn);
-    case "Parameter":            return printParameter(path, printFn);
-    case "StructMember":         return printStructMember(path, printFn);
-    case "ReturnStmt":           return printReturnStmt(path, printFn);
-    case "AssignStmt":           return printAssignStmt(path, printFn);
-    case "IncrDecrStmt":         return printIncrDecrStmt(path, printFn);
-    case "ExprStmt":             return printExprStmt(path, printFn);
-    case "PhonyAssignStmt":      return printPhonyAssignStmt(path, printFn);
-    case "VarDeclaration":       return printVarDeclaration(path, printFn);
-    case "LetDeclaration":       return printLetOrConstDeclaration(path, printFn, "let");
-    case "ConstDeclaration":     return printLetOrConstDeclaration(path, printFn, "const");
-    case "OverrideDeclaration":  return printOverrideDeclaration(path, printFn);
-    case "AliasDeclaration":     return printAliasDeclaration(path, printFn);
-    case "ConstAssertStatement": return printConstAssert(path, printFn);
+    case "TranslationUnit":      return printTranslationUnit(node, print, text);
+    case "FunctionDeclaration":  return printFunctionDeclaration(node, print);
+    case "Block":                return printBlock(node, print, text);
+    case "IfStmt":               return printIfStmt(node, print);
+    case "LoopStmt":             return printLoopStmt(node, print, text);
+    case "ContinuingStmt":       return printContinuingStmt(node, print, text);
+    case "WhileStmt":            return printWhileStmt(print);
+    case "ForStmt":              return printForStmt(node, print);
+    case "SwitchStmt":           return printSwitchStmt(node, print);
+    case "CaseClause":           return printCaseClause(node, print);
+    case "StructDeclaration":    return printStructDeclaration(node, print);
+    case "BinaryExpr":           return printBinaryExpr(node, print);
+    case "UnaryExpr":            return printUnaryExpr(node, print);
+    case "CallExpr":             return printCallExpr(node, print);
+    case "MemberExpr":
+    case "IndexExpr":            return printMemberChain(node, print);
+    case "ParenExpr":            return printParenExpr(print);
+    case "TypeExpr":             return printTypeExpr(node, print);
+    case "Attribute":            return printAttribute(node, print);
+    case "Parameter":
+    case "StructMember":         return printParameterOrMember(node, print);
+    case "ReturnStmt":           return printReturnStmt(node, print);
+    case "AssignStmt":           return printAssignStmt(node, print, semicolon(path));
+    case "IncrDecrStmt":         return printIncrDecrStmt(node, print, semicolon(path));
+    case "ExprStmt":             return printExprStmt(print, semicolon(path));
+    case "PhonyAssignStmt":      return printPhonyAssignStmt(print);
+    case "VarDeclaration":       return printVarDeclaration(node, print, semicolon(path));
+    case "LetDeclaration":       return printLetOrConstDeclaration(node, print, "let", semicolon(path));
+    case "ConstDeclaration":     return printLetOrConstDeclaration(node, print, "const", semicolon(path));
+    case "OverrideDeclaration":  return printOverrideDeclaration(node, print);
+    case "AliasDeclaration":     return printAliasDeclaration(node, print);
+    case "ConstAssertStatement": return printConstAssert(print);
     case "EnableDirective":
     case "RequiresDirective":
     case "DiagnosticDirective":
@@ -96,12 +89,11 @@ function printNode(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => 
     case "LiteralExpr":
     case "DefaultSelector":
     case "LineComment":
-    case "BlockComment":
-      return printLeafNode(node);
+    case "BlockComment":         return printLeafNode(node);
     default:
       return assertNever(node);
   }
-}
+};
 
 // ─── Prettier comment API ─────────────────────────────────────
 
@@ -169,7 +161,6 @@ export function printComment(commentPath: AstPath<CommentNode>): Doc {
   return node.value;
 }
 
-export function getCommentChildNodes(node: ASTNode): ASTNode[] {
-  if (node == null || typeof node !== "object" || !("kind" in node)) return [];
-  return children(node);
+export function getVisitorKeys(node: ASTNode): string[] {
+  return visitorKeys[node.kind];
 }

@@ -2,7 +2,7 @@
 // statements, wrapping, blank lines, comments, and idempotency.
 // Uses printWidth=80. For full-shader integration tests, see format.test.ts.
 import { describe, it, expect } from "vitest";
-import { canAttachComment, getCommentChildNodes } from "./printer.ts";
+import { canAttachComment } from "./printer.ts";
 import { fmt as fmtBase, assertIdempotentAtAllWidths } from "./test-helpers.ts";
 
 async function fmt(input: string, printWidth: number = 80): Promise<string> {
@@ -520,6 +520,27 @@ const B = 2;
       expect(result).toBe(input);
     });
 
+    it("does not move a blank line from after a comment to before it", async () => {
+      const input = `fn f() {
+  a = 1;
+  // c
+
+  b = 2;
+}
+`;
+      expect(await fmt(input)).toBe(input);
+    });
+
+    it("preserves a blank line after a trailing comment", async () => {
+      const input = `fn f() {
+  a = 1; // c
+
+  b = 2;
+}
+`;
+      expect(await fmt(input)).toBe(input);
+    });
+
     it("is idempotent for blank line preservation", async () => {
       await assertIdempotentAtAllWidths(`fn f() {
   let x = 1;
@@ -968,53 +989,6 @@ fn main() -> @builtin(position) vec4f {
           return result;
         }
       `);
-    });
-  });
-
-  describe("getCommentChildNodes", () => {
-    it("returns empty for non-object input", () => {
-      expect(getCommentChildNodes(null as never)).toEqual([]);
-      expect(getCommentChildNodes(undefined as never)).toEqual([]);
-    });
-
-    it("returns empty for leaf nodes", () => {
-      expect(getCommentChildNodes({ kind: "IdentExpr", name: "x", start: 0, end: 1 })).toEqual([]);
-      expect(getCommentChildNodes({ kind: "LiteralExpr", value: "42", literalType: "int", start: 0, end: 2 })).toEqual([]);
-      expect(getCommentChildNodes({ kind: "BreakStmt", start: 0, end: 6 })).toEqual([]);
-      expect(getCommentChildNodes({ kind: "ContinueStmt", start: 0, end: 9 })).toEqual([]);
-      expect(getCommentChildNodes({ kind: "DiscardStmt", start: 0, end: 8 })).toEqual([]);
-    });
-
-    it("returns children for ReturnStmt with value", () => {
-      const value = { kind: "IdentExpr" as const, name: "x", start: 7, end: 8 };
-      const node = { kind: "ReturnStmt" as const, value, start: 0, end: 9 };
-      expect(getCommentChildNodes(node)).toEqual([value]);
-    });
-
-    it("returns empty for ReturnStmt without value", () => {
-      const node = { kind: "ReturnStmt" as const, value: null, start: 0, end: 7 };
-      expect(getCommentChildNodes(node)).toEqual([]);
-    });
-
-    it("returns children for BinaryExpr", () => {
-      const left = { kind: "IdentExpr" as const, name: "a", start: 0, end: 1 };
-      const right = { kind: "IdentExpr" as const, name: "b", start: 4, end: 5 };
-      const node = { kind: "BinaryExpr" as const, left, op: "+", right, start: 0, end: 5 };
-      expect(getCommentChildNodes(node)).toEqual([left, right]);
-    });
-
-    it("returns children for IfStmt with else clause", () => {
-      const condition = { kind: "IdentExpr" as const, name: "x", start: 3, end: 4 };
-      const body = { kind: "Block" as const, statements: [], start: 5, end: 7 };
-      const elseClause = { kind: "Block" as const, statements: [], start: 13, end: 15 };
-      const node = { kind: "IfStmt" as const, condition, body, elseClause, start: 0, end: 15 };
-      expect(getCommentChildNodes(node)).toEqual([condition, body, elseClause]);
-    });
-
-    it("returns children for ForStmt with missing parts", () => {
-      const body = { kind: "Block" as const, statements: [], start: 10, end: 12 };
-      const node = { kind: "ForStmt" as const, init: null, condition: null, update: null, body, start: 0, end: 12 };
-      expect(getCommentChildNodes(node)).toEqual([body]);
     });
   });
 

@@ -1,4 +1,4 @@
-import type { AstPath, Doc } from "prettier";
+import type { Doc } from "prettier";
 import { doc } from "prettier";
 import type {
   ASTNode,
@@ -8,17 +8,15 @@ import type {
   BinaryExpr,
   UnaryExpr,
   CallExpr,
+  MemberExpr,
+  IndexExpr,
   TypeExpr,
+  Expr,
 } from "../ast.ts";
 import { assertNever } from "../ast.ts";
-import { callChild, mapChildren } from "./path-helpers.ts";
+import { type Print, printEach, printDelimitedList } from "./helpers.ts";
 
-const { join, line, softline, indent, group, ifBreak } = doc.builders;
-
-export function printDelimitedList(open: string, close: string, items: Doc[]): Doc {
-  if (items.length === 0) return [open, close];
-  return group([open, indent([softline, join([",", line], items)]), ifBreak(",", ""), softline, close]);
-}
+const { join, line, softline, indent, group } = doc.builders;
 
 // ─── Directives ───────────────────────────────────────────────
 
@@ -37,10 +35,9 @@ function printDiagnosticDirective(node: { severity: string; rule: string }): Doc
 // Render any dangling comments attached to `node`, marking them printed.
 // Used for nodes (e.g. zero-arg CallExpr) that have no AST children to anchor comments.
 function printDanglingComments(node: ASTNode): Doc {
-  const comments = (node as { comments?: { value: string; leading?: boolean; trailing?: boolean; printed?: boolean }[] }).comments;
-  if (!comments) return "";
+  if (!node.comments) return "";
   const parts: Doc[] = [];
-  for (const c of comments) {
+  for (const c of node.comments) {
     if (c.leading || c.trailing) continue;
     c.printed = true;
     if (parts.length > 0) parts.push(" ");
@@ -51,44 +48,31 @@ function printDanglingComments(node: ASTNode): Doc {
 
 // ─── Attribute / Parameter / StructMember ─────────────────────
 
-export function printAttribute(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as Attribute;
+export function printAttribute(node: Attribute, print: Print): Doc {
   if (node.args.length === 0) {
     return ["@", node.name];
   }
-  return ["@", node.name, "(", join(", ", mapChildren(path, printFn, "args")), ")"];
+  return ["@", node.name, "(", join(", ", printEach(node, "args", print)), ")"];
 }
 
-export function printParameter(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as Parameter;
+export function printParameterOrMember(node: Parameter | StructMember, print: Print): Doc {
   const parts: Doc[] = [];
   if (node.attributes.length > 0) {
-    parts.push(join(" ", mapChildren(path, printFn, "attributes")), " ");
+    parts.push(join(" ", printEach(node, "attributes", print)), " ");
   }
-  parts.push(node.name, ": ", callChild(path, printFn, "type"));
-  return parts;
-}
-
-export function printStructMember(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as StructMember;
-  const parts: Doc[] = [];
-  if (node.attributes.length > 0) {
-    parts.push(join(" ", mapChildren(path, printFn, "attributes")), " ");
-  }
-  parts.push(node.name, ": ", callChild(path, printFn, "type"));
+  parts.push(node.name, ": ", print("type"));
   return parts;
 }
 
 // ─── TypeExpr / ParenExpr ─────────────────────────────────────
 
-export function printTypeExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as TypeExpr;
+export function printTypeExpr(node: TypeExpr, print: Print): Doc {
   if (node.templateArgs.length === 0) return node.name;
-  return [node.name, printDelimitedList("<", ">", mapChildren(path, printFn, "templateArgs"))];
+  return [node.name, printDelimitedList("<", ">", printEach(node, "templateArgs", print))];
 }
 
-export function printParenExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return ["(", callChild(path, printFn, "expr"), ")"];
+export function printParenExpr(print: Print): Doc {
+  return ["(", print("expr"), ")"];
 }
 
 // ─── Binary / Unary / Call ───────────────────────────────────
@@ -129,52 +113,42 @@ function getBinaryPrecedenceGroup(op: string): number {
   }
 }
 
-export function printBinaryExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as BinaryExpr;
+// Selector reaching `depth` levels down a chain through `key`, e.g. ["left", "left"]
+function repeatKey(key: string, depth: number): string[] {
+  return Array<string>(depth).fill(key);
+}
+
+export function printBinaryExpr(node: BinaryExpr, print: Print): Doc {
   const prec = getBinaryPrecedenceGroup(node.op);
+  const isSamePrec = (e: Expr): e is BinaryExpr => e.kind === "BinaryExpr" && getBinaryPrecedenceGroup(e.op) === prec;
 
-  const left = node.left;
-  const isChain = left.kind === "BinaryExpr" && getBinaryPrecedenceGroup(left.op) === prec;
-  if (!isChain) {
-    return [callChild(path, printFn, "left"), " ", node.op, " ", callChild(path, printFn, "right")];
+  if (!isSamePrec(node.left)) {
+    return [print("left"), " ", node.op, " ", print("right")];
   }
 
-  // Walk the same-precedence left spine, rendering each operand via path so
-  // comments on leaves attach correctly. leafDocs[0] is the leftmost leaf.
-  const leafDocs: Doc[] = [];
-  const opsCollected: string[] = [];
-  function walk(p: AstPath<ASTNode>): void {
-    const n = p.node;
-    if (n.kind === "BinaryExpr" && getBinaryPrecedenceGroup(n.op) === prec) {
-      p.call(walk, "left" as never);
-      opsCollected.push(n.op);
-      leafDocs.push(callChild(p, printFn, "right"));
-    } else {
-      leafDocs.unshift(printFn(p));
-    }
-  }
-  walk(path);
+  // Flatten the same-precedence left spine: spine[d] is reached by `d` steps through "left"
+  const spine: BinaryExpr[] = [node];
+  for (let left: Expr = node.left; isSamePrec(left); left = left.left) spine.push(left);
 
+  const head = print(repeatKey("left", spine.length));
   const rest: Doc[] = [];
-  for (let i = 0; i < opsCollected.length; i++) {
-    rest.push(line, opsCollected[i], " ", leafDocs[i + 1]);
+  for (let depth = spine.length - 1; depth >= 0; depth--) {
+    rest.push(line, spine[depth].op, " ", print([...repeatKey("left", depth), "right"]));
   }
-  return group([leafDocs[0], indent(rest)]);
+  return group([head, indent(rest)]);
 }
 
-export function printUnaryExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as UnaryExpr;
-  return [node.op, callChild(path, printFn, "operand")];
+export function printUnaryExpr(node: UnaryExpr, print: Print): Doc {
+  return [node.op, print("operand")];
 }
 
-export function printCallExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as CallExpr;
+export function printCallExpr(node: CallExpr, print: Print): Doc {
   const parts: Doc[] = [node.callee];
   if (node.templateArgs.length > 0) {
-    parts.push(printDelimitedList("<", ">", mapChildren(path, printFn, "templateArgs")));
+    parts.push(printDelimitedList("<", ">", printEach(node, "templateArgs", print)));
   }
   if (node.args.length > 0) {
-    parts.push(printDelimitedList("(", ")", mapChildren(path, printFn, "args")));
+    parts.push(printDelimitedList("(", ")", printEach(node, "args", print)));
   } else {
     parts.push("(", printDanglingComments(node), ")");
   }
@@ -183,77 +157,26 @@ export function printCallExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNo
 
 // ─── Member / Index chains ────────────────────────────────────
 
-type ChainPart = { type: "member"; name: string } | { type: "index" };
+// Short chains (<3 segments) render flat; longer chains break before each `.`,
+// keeping consecutive `[i]` indexing attached to its preceding member.
+export function printMemberChain(node: MemberExpr | IndexExpr, print: Print): Doc {
+  const links: (MemberExpr | IndexExpr)[] = [];
+  for (let e: Expr = node; e.kind === "MemberExpr" || e.kind === "IndexExpr"; e = e.object) links.push(e);
+  links.reverse(); // source order; links[i] is reached by `links.length - 1 - i` steps through "object"
 
-// Render a member/index access chain. `indexDocs` holds the rendered index
-// expressions in source order, consumed positionally as the parts iterate.
-// Short chains (<3 segments) render flat; longer chains break with softlines
-// and are grouped so consecutive `[i]` indexing sticks to its preceding member.
-function formatMemberChainDoc(headDoc: Doc, chainParts: ChainPart[], indexDocs: Doc[]): Doc {
-  if (chainParts.length < 3) {
-    const parts: Doc[] = [headDoc];
-    let idx = 0;
-    for (const part of chainParts) {
-      if (part.type === "member") parts.push(".", part.name);
-      else parts.push("[", indexDocs[idx++], "]");
-    }
-    return parts;
-  }
+  const headDoc = print(repeatKey("object", links.length));
+  const segments = links.map((link, i): Doc =>
+    link.kind === "MemberExpr" ? [".", link.member] : ["[", print([...repeatKey("object", links.length - 1 - i), "index"]), "]"],
+  );
 
-  const chainDocs: Doc[] = [];
-  let idx = 0;
-  for (const part of chainParts) {
-    if (part.type === "member") chainDocs.push([".", part.name]);
-    else chainDocs.push(["[", indexDocs[idx++], "]"]);
-  }
-
-  const groupedDocs: Doc[][] = [];
-  for (const d of chainDocs) {
-    const isIndexEntry = Array.isArray(d) && d[0] === "[";
-    if (isIndexEntry && groupedDocs.length > 0) {
-      groupedDocs[groupedDocs.length - 1].push(d);
-    } else {
-      groupedDocs.push([d]);
-    }
-  }
-
-  const indentedParts: Doc[] = [];
-  for (const g of groupedDocs) indentedParts.push(softline, ...g);
-  return group([headDoc, indent(indentedParts)]);
-}
-
-function printMemberOrIndexChain(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  let headDoc: Doc = "";
-  const chainParts: ChainPart[] = [];
-  const indexDocs: Doc[] = [];
-  function walk(p: AstPath<ASTNode>): void {
-    const n = p.node;
-    if (n.kind === "MemberExpr") {
-      p.call(walk, "object" as never);
-      chainParts.push({ type: "member", name: n.member });
-    } else if (n.kind === "IndexExpr") {
-      p.call(walk, "object" as never);
-      indexDocs.push(callChild(p, printFn, "index"));
-      chainParts.push({ type: "index" });
-    } else {
-      headDoc = printFn(p);
-    }
-  }
-  walk(path);
-  return formatMemberChainDoc(headDoc, chainParts, indexDocs);
-}
-
-export function printMemberExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return printMemberOrIndexChain(path, printFn);
-}
-
-export function printIndexExpr(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return printMemberOrIndexChain(path, printFn);
+  if (segments.length < 3) return [headDoc, ...segments];
+  const parts = links.flatMap((link, i) => (i === 0 || link.kind === "MemberExpr" ? [softline, segments[i]] : [segments[i]]));
+  return group([headDoc, indent(parts)]);
 }
 
 // ─── Leaf renderer ────────────────────────────────────────────
-// Handles AST kinds with no path-attachable children: directives, simple
-// keyword statements, identifiers, literals, default selectors, comments.
+// Handles AST kinds with no child nodes: directives, simple keyword
+// statements, identifiers, literals, default selectors, comments.
 
 type LeafNode = Extract<
   ASTNode,

@@ -1,205 +1,98 @@
-import type { AstPath, Doc } from "prettier";
+import type { Doc } from "prettier";
 import { doc } from "prettier";
 import type {
-  ASTNode,
   Block,
   IfStmt,
   ForStmt,
   LoopStmt,
   ContinuingStmt,
+  SwitchStmt,
   CaseClause,
   ReturnStmt,
   AssignStmt,
   IncrDecrStmt,
-  VarDeclaration,
-  LetDeclaration,
-  ConstDeclaration,
-  ExprStmt,
 } from "../ast.ts";
-import { assertNever } from "../ast.ts";
-import { callChild, mapChildren, mapStmtEntries } from "./path-helpers.ts";
-import { offsetToLine } from "./blank-line-info.ts";
-import { getCurrentContext } from "./context.ts";
-import { printVarDeclarationCore, printLetOrConstDeclarationCore } from "./declarations.ts";
-
-type ForLoopSubStmt = VarDeclaration | LetDeclaration | ConstDeclaration | AssignStmt | IncrDecrStmt | ExprStmt;
+import { type Print, printEach, printStatementList } from "./helpers.ts";
 
 const { join, line, softline, hardline, indent, group } = doc.builders;
 
-// Returns true if the source text between two offsets contains a blank line
-// A blank line is an empty line (or whitespace-only line) between two newlines
-export function hasBlankLineBetween(fromEnd: number, toStart: number): boolean {
-  const { lineStarts, blankLines } = getCurrentContext().blankLineInfo;
-  if (lineStarts.length <= 1) return false;
-  const startLine = offsetToLine(lineStarts, fromEnd);
-  const endLine = offsetToLine(lineStarts, toStart);
-  for (let l = startLine; l <= endLine; l++) {
-    if (blankLines.has(l)) return true;
-  }
-  return false;
-}
-
-export function printStatementList(stmts: { node: { start: number; end: number }; doc: Doc }[]): Doc[] {
-  const result: Doc[] = [];
-  for (let i = 0; i < stmts.length; i++) {
-    if (i > 0) {
-      if (hasBlankLineBetween(stmts[i - 1].node.end, stmts[i].node.start)) {
-        result.push(hardline, hardline);
-      } else {
-        result.push(hardline);
-      }
-    }
-    result.push(stmts[i].doc);
-  }
-  return result;
-}
-
 // ─── Block / control-flow statements ──────────────────────────
 
-export function printBlock(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as Block;
+export function printBlock(node: Block, print: Print, text: string): Doc {
   if (node.statements.length === 0) return "{}";
-  const stmts = mapStmtEntries(path, printFn, "statements");
-  return ["{", indent([hardline, ...printStatementList(stmts)]), hardline, "}"];
+  const stmts = printStatementList(node.statements, printEach(node, "statements", print), text);
+  return ["{", indent([hardline, ...stmts]), hardline, "}"];
 }
 
-export function printIfStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as IfStmt;
-  const condDoc = callChild(path, printFn, "condition");
-  const bodyDoc = callChild(path, printFn, "body");
-  const parts: Doc[] = [group(["if", indent([line, condDoc]), line]), bodyDoc];
-
-  if (node.elseClause) {
-    parts.push(" else ", callChild(path, printFn, "elseClause"));
-  }
-
+export function printIfStmt(node: IfStmt, print: Print): Doc {
+  const parts: Doc[] = [group(["if", indent([line, print("condition")]), line]), print("body")];
+  if (node.elseClause) parts.push(" else ", print("elseClause"));
   return parts;
 }
 
-export function printLoopStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as LoopStmt;
-  if (node.continuing) {
-    const continuingDoc = callChild(path, printFn, "continuing");
-    const stmts = mapStmtEntries(path, printFn, "body", "statements");
-    const bodyParts = printStatementList(stmts);
-    if (stmts.length > 0) bodyParts.push(hardline);
-    bodyParts.push(continuingDoc);
-    return ["loop {", indent([hardline, ...bodyParts]), hardline, "}"];
-  }
-  return ["loop ", callChild(path, printFn, "body")];
+export function printLoopStmt(node: LoopStmt, print: Print, text: string): Doc {
+  if (!node.continuing) return ["loop ", print("body")];
+  const { statements } = node.body;
+  const docs = printEach(node.body, "statements", print, ["body"]);
+  const bodyParts = printStatementList(statements, docs, text);
+  if (statements.length > 0) bodyParts.push(hardline);
+  bodyParts.push(print("continuing"));
+  return ["loop {", indent([hardline, ...bodyParts]), hardline, "}"];
 }
 
-export function printWhileStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  return [
-    group(["while", indent([line, callChild(path, printFn, "condition")]), line]),
-    callChild(path, printFn, "body"),
-  ];
+export function printWhileStmt(print: Print): Doc {
+  return [group(["while", indent([line, print("condition")]), line]), print("body")];
 }
 
-export function printForStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as ForStmt;
-  const subStmt = (p: AstPath<ASTNode>) => printForLoopSubStmt(p, printFn);
-  const init = node.init ? path.call(subStmt, "init" as never) : "";
-  const cond = node.condition ? callChild(path, printFn, "condition") : "";
-  const update = node.update ? path.call(subStmt, "update" as never) : "";
-
-  return [
-    group(["for (", indent([softline, init, ";", line, cond, ";", line, update]), softline, ")"]),
-    " ",
-    callChild(path, printFn, "body"),
-  ];
+export function printForStmt(node: ForStmt, print: Print): Doc {
+  const init = node.init ? print("init") : "";
+  const cond = node.condition ? print("condition") : "";
+  const update = node.update ? print("update") : "";
+  return [group(["for (", indent([softline, init, ";", line, cond, ";", line, update]), softline, ")"]), " ", print("body")];
 }
 
-export function printCaseClause(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as CaseClause;
+export function printCaseClause(node: CaseClause, print: Print): Doc {
   const isDefault = node.selectors.length === 1 && node.selectors[0].kind === "DefaultSelector";
-  const selectorDoc = isDefault
-    ? "default"
-    : ["case ", join(", ", mapChildren(path, printFn, "selectors"))];
-  return [selectorDoc, ": ", callChild(path, printFn, "body")];
+  const selectorDoc = isDefault ? "default" : ["case ", join(", ", printEach(node, "selectors", print))];
+  return [selectorDoc, ": ", print("body")];
 }
 
-export function printSwitchStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const exprDoc = callChild(path, printFn, "expr");
-  const clauseDocs = mapChildren(path, printFn, "clauses");
-  return ["switch ", exprDoc, " {", indent([hardline, join(hardline, clauseDocs)]), hardline, "}"];
+export function printSwitchStmt(node: SwitchStmt, print: Print): Doc {
+  const clauseDocs = printEach(node, "clauses", print);
+  return ["switch ", print("expr"), " {", indent([hardline, join(hardline, clauseDocs)]), hardline, "}"];
 }
 
-export function printContinuingStmt(path: AstPath<ASTNode>, printFn: (path: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as ContinuingStmt;
-  const stmts = mapStmtEntries(path, printFn, "body", "statements");
+export function printContinuingStmt(node: ContinuingStmt, print: Print, text: string): Doc {
+  const nodes: { end: number }[] = [...node.body.statements];
+  const docs = printEach(node.body, "statements", print, ["body"]);
   if (node.breakIf) {
-    stmts.push({
-      node: { start: node.breakIf.start, end: node.breakIf.end },
-      doc: ["break if ", callChild(path, printFn, "breakIf"), ";"],
-    });
+    nodes.push(node.breakIf);
+    docs.push(["break if ", print("breakIf"), ";"]);
   }
-  if (stmts.length === 0) return "continuing {}";
-  return ["continuing {", indent([hardline, ...printStatementList(stmts)]), hardline, "}"];
+  if (docs.length === 0) return "continuing {}";
+  return ["continuing {", indent([hardline, ...printStatementList(nodes, docs, text)]), hardline, "}"];
 }
 
 // ─── Simple statements ────────────────────────────────────────
+// `semi` is empty when the statement sits in a for-loop header
 
-export function printReturnStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as ReturnStmt;
-  if (node.value) {
-    return group(["return", indent([line, callChild(path, printFn, "value")]), ";"]);
-  }
-  return "return;";
+export function printReturnStmt(node: ReturnStmt, print: Print): Doc {
+  if (!node.value) return "return;";
+  return group(["return", indent([line, print("value")]), ";"]);
 }
 
-// Print a statement without trailing semicolon (for for-loop init/update)
-function printForLoopSubStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as ForLoopSubStmt;
-  switch (node.kind) {
-    case "VarDeclaration":
-      return printVarDeclarationCore(path, printFn);
-    case "LetDeclaration":
-      return printLetOrConstDeclarationCore(path, printFn, "let");
-    case "ConstDeclaration":
-      return printLetOrConstDeclarationCore(path, printFn, "const");
-    case "AssignStmt":
-      return printAssignStmtCore(path, printFn);
-    case "IncrDecrStmt":
-      return printIncrDecrStmtCore(path, printFn);
-    case "ExprStmt":
-      return printExprStmtCore(path, printFn);
-    default:
-      return assertNever(node);
-  }
+export function printAssignStmt(node: AssignStmt, print: Print, semi: string): Doc {
+  return [group([print("target"), " ", node.op, indent([line, print("value")])]), semi];
 }
 
-function printAssignStmtCore(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as AssignStmt;
-  return group([
-    callChild(path, printFn, "target"),
-    " ",
-    node.op,
-    indent([line, callChild(path, printFn, "value")]),
-  ]);
+export function printIncrDecrStmt(node: IncrDecrStmt, print: Print, semi: string): Doc {
+  return [print("target"), node.op, semi];
 }
 
-export function printAssignStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return [printAssignStmtCore(path, printFn), ";"];
+export function printExprStmt(print: Print, semi: string): Doc {
+  return [print("expr"), semi];
 }
 
-function printIncrDecrStmtCore(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  const node = path.node as IncrDecrStmt;
-  return [callChild(path, printFn, "target"), node.op];
-}
-
-export function printIncrDecrStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return [printIncrDecrStmtCore(path, printFn), ";"];
-}
-
-function printExprStmtCore(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return callChild(path, printFn, "expr");
-}
-
-export function printExprStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return [printExprStmtCore(path, printFn), ";"];
-}
-
-export function printPhonyAssignStmt(path: AstPath<ASTNode>, printFn: (p: AstPath<ASTNode>) => Doc): Doc {
-  return group(["_ =", indent([line, callChild(path, printFn, "value")]), ";"]);
+export function printPhonyAssignStmt(print: Print): Doc {
+  return group(["_ =", indent([line, print("value")]), ";"]);
 }
